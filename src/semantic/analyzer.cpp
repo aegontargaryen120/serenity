@@ -802,8 +802,22 @@ Type SemanticAnalyzer::analyzeLValue(const ast::Expression& expression, bool dir
                 return {TypeKind::Error, {}};
             }
         }
-        // Struct values are reference-like in the initial Serenity model:
-        // mut controls rebinding a variable, while its fields may be updated.
+        // Struct bindings are immutable by default. Mutating any nested field
+        // requires the root variable holding the struct to have been declared
+        // with `mut`.
+        const ast::Expression* root = &member->object();
+        while (const auto* nested = dynamic_cast<const ast::MemberAccessExpr*>(root)) {
+            root = &nested->object();
+        }
+        if (const auto* rootIdentifier = dynamic_cast<const ast::IdentifierExpr*>(root)) {
+            const VariableSymbol* variable = lookupVariable(rootIdentifier->name());
+            if (variable != nullptr && !variable->isMutable) {
+                report("cannot modify fields of immutable variable '" + rootIdentifier->name() + "'",
+                       expression.span());
+            }
+        } else {
+            report("cannot modify a field through a temporary struct value", expression.span());
+        }
         return analyzeMemberAccess(*member);
     }
 

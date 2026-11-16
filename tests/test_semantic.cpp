@@ -71,7 +71,7 @@ func main() => int {
     mut int age = 17;
     bool isAdult;
     string nothing = null;
-    Person person = { .name = "Aegon", .age = 120 };
+    mut Person person = { .name = "Aegon", .age = 120 };
     Person emptyPerson;
     Direction direction = Direction.North;
     Direction noDirection = null;
@@ -158,6 +158,34 @@ func main() => int {
     require(containsMessage(invalid, "expects 1 argument(s), but received 0"), "function argument count mismatch should be diagnosed");
     require(containsMessage(invalid, "'break' is only valid inside a loop"), "break outside loop should be diagnosed");
     require(containsMessage(invalid, "return value has type 'string'"), "return type mismatch should be diagnosed");
+
+    const std::string immutableStructSource = R"SERENITY(
+struct { int age; } Person;
+func main() => int {
+    Person person = { .age = 17 };
+    person.age = 18;
+    return 0;
+}
+)SERENITY";
+    ast::Program immutableStructProgram = parseProgram(immutableStructSource);
+    semantic::SemanticAnalyzer immutableStructAnalyzer(immutableStructProgram);
+    semantic::SemanticResult immutableStruct = immutableStructAnalyzer.analyze();
+    require(!immutableStruct.ok(), "fields of an immutable struct binding should not be mutable");
+    require(containsMessage(immutableStruct, "cannot modify fields of immutable variable 'person'"),
+            "immutable struct field assignment should be diagnosed");
+
+    const std::string mutableStructSource = R"SERENITY(
+struct { int age; } Person;
+func main() => int {
+    mut Person person = { .age = 17 };
+    person.age = 18;
+    return 0;
+}
+)SERENITY";
+    ast::Program mutableStructProgram = parseProgram(mutableStructSource);
+    semantic::SemanticAnalyzer mutableStructAnalyzer(mutableStructProgram);
+    semantic::SemanticResult mutableStruct = mutableStructAnalyzer.analyze();
+    require(mutableStruct.ok(), "fields of a mutable struct binding should be mutable");
 
     const std::string functionErrorsSource = R"SERENITY(
 func add(int, int) => int;

@@ -68,11 +68,10 @@ Variables are immutable by default. `mut` permits assigning a new value to the
 variable itself. Local scopes may shadow names from outer scopes, but duplicate
 names in the same scope are rejected.
 
-Current v0.5 object rule: struct variables are treated as reference-like values.
-`mut` controls rebinding the variable; fields of a referenced struct may be
-updated even when the variable binding itself is immutable. This is a deliberate
-initial semantic rule and can be revised if Serenity adopts value semantics or
-field-level mutability later.
+Struct bindings are immutable by default. Declaring a struct variable with `mut` permits
+both rebinding the variable and modifying its fields. Nested field mutation also
+requires the root struct variable to be mutable. A temporary struct value cannot
+be mutated directly.
 
 Global variables are visible inside functions. Executable statements remain
 restricted to function bodies.

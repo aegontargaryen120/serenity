@@ -1,18 +1,26 @@
-# Serenity Frontend - milestone 0.5
+# Serenity - compiler frontend and bytecode generator v0.6
 
-This project contains the current Serenity frontend foundations:
+Serenity is a statically typed compiled language with an interpreter and a
+planned tracing JIT. This repository currently contains the frontend through
+semantic analysis plus the first bytecode generator.
 
-- **Lexer v0.1:** tokenizes Serenity source and reports lexical diagnostics.
-- **Preprocessor v0.2:** expands `%include` directives and preserves source origins.
-- **AST v0.3:** defines the syntax tree data model.
-- **Parser v0.4:** constructs ASTs from tokens using recursive descent and
-  precedence-climbing expression parsing.
-- **Semantic Analyzer v0.5:** resolves names and types, validates declarations,
-  checks function signatures and calls, enforces mutability, and validates
-  return/loop contexts.
+## Current components
 
-The project uses C++20. LLVM is not linked yet; it will be introduced with the
-AOT/JIT backend milestones.
+- **Lexer v0.1:** tokenization and lexical diagnostics.
+- **Preprocessor v0.2:** `%include` expansion, relative path resolution,
+  include-once behavior, cycle handling, and source-origin mapping.
+- **AST v0.3:** syntax tree model with source spans.
+- **Parser v0.4:** recursive-descent parser and precedence-aware expressions.
+- **Semantic analysis v0.5:** name/type resolution, signature checking,
+  mutability and control-flow context checks.
+- **Bytecode generator v0.6:** fixed-width stack instructions, constants,
+  global/local slots, function calls, control flow, structs/enums, source spans,
+  and disassembly.
+
+The bytecode layer does not link LLVM. `sninterp` is planned to execute this
+bytecode directly; `snjit` will later profile and compile hot code to native
+machine code. The `serenity` AOT executable and LLVM backend are also future
+milestones.
 
 ## Build and test
 
@@ -22,13 +30,23 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The CMake configuration selects Homebrew LLVM's `clang` and `clang++` drivers.
-The C++ compiler must be `clang++`, because it links the C++ standard library
-and runtime.
+On macOS, CMake prefers the Homebrew LLVM toolchain when it exists:
 
-## Semantic analyzer usage
+```cmake
+set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
+set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
+```
+
+On other systems, or where that Homebrew prefix does not exist, CMake uses the
+system's normal compiler discovery.
+
+## Bytecode generation API
+
+Run the lexer, parser, and semantic analyzer first. Generate bytecode only when
+both lexing/parsing and semantic analysis succeed:
 
 ```cpp
+#include "serenity/bytecode/generator.hpp"
 #include "serenity/lexer/lexer.hpp"
 #include "serenity/parser/parser.hpp"
 #include "serenity/semantic/analyzer.hpp"
@@ -37,48 +55,31 @@ and runtime.
 
 serenity::Lexer lexer(source);
 auto lexed = lexer.tokenize();
+if (!lexed.ok()) {
+    // Report lexed.errors.
+}
 
-if (lexed.ok()) {
-    serenity::parser::Parser parser(std::move(lexed.tokens));
-    auto parsed = parser.parse();
+serenity::parser::Parser parser(std::move(lexed.tokens));
+auto parsed = parser.parse();
+if (!parsed.ok()) {
+    // Report parsed.errors.
+}
 
-    if (parsed.ok()) {
-        serenity::semantic::SemanticAnalyzer analyzer(*parsed.program);
-        auto checked = analyzer.analyze();
-        if (checked.ok()) {
-            // checked.model.expressionTypes contains resolved expression types.
-        } else {
-            // Report checked.errors.
-        }
-    }
+serenity::semantic::SemanticAnalyzer analyzer(*parsed.program);
+auto checked = analyzer.analyze();
+if (!checked.ok()) {
+    // Report checked.errors.
+}
+
+serenity::bytecode::BytecodeGenerator generator(*parsed.program, checked.model);
+auto generated = generator.generate();
+if (generated.ok()) {
+    const std::string listing = serenity::bytecode::disassemble(*generated.module);
 }
 ```
 
-`SemanticAnalyzer` does not modify the AST. The returned semantic model stores
-expression types keyed by pointers into the AST. Keep the `Program` alive and
-unmodified while using that model.
+The AST must remain alive and unchanged while its `SemanticModel` is used.
 
-## Source locations
-
-Every AST node carries a half-open source span. Offsets refer to the
-preprocessed source buffer. Use `PreprocessResult::originAt(offset)` to map an
-AST span or diagnostic back to the original `.sn` or `.snh` file.
-
-## Current project layout
-
-```text
-include/serenity/lexer/         Lexer and token interfaces
-include/serenity/preprocessor/  Preprocessor interface
-include/serenity/ast/           AST node definitions
-include/serenity/parser/        Parser interface
-include/serenity/semantic/      Semantic analyzer interface
-src/lexer/                      Lexer implementation
-src/preprocessor/               Preprocessor implementation
-src/parser/                     Parser implementation
-src/semantic/                   Semantic analyzer implementation
-tests/                          Lexer, preprocessor, AST, parser, semantic tests
-docs/                            Grammar and design notes
-```
-
-See `docs/SEMANTIC_ANALYSIS_v0.5.md` for the currently implemented rules and
-intentional limitations.
+See `docs/BYTECODE_v0.6.md` for instruction layout, stack effects, function
+calling convention, defaults, and current limitations. Earlier milestone notes
+remain in `docs/`.

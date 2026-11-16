@@ -1,0 +1,28 @@
+struct {
+    string name = "Unknown";
+    int age = 0;
+} Person;
+
+enum { North, South, East, West } Direction;
+
+int startingAge = 17;
+
+func increment(int value) => int {
+    return value + 1;
+}
+
+func main() => int {
+    mut Person person = {
+        .name = "Aegon",
+        .age = startingAge
+    };
+
+    while (person.age < 20) {
+        person.age = increment(person.age);
+    }
+
+    Direction facing = Direction.North;
+    println(person.name);
+    println(person.age);
+    return 0;
+}
