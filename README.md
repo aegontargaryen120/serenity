@@ -1,4 +1,4 @@
-# Serenity v0.9 — tracing JIT
+# Serenity v0.10 — direct LLVM AOT backend
 
 Serenity is a statically typed compiled language with a shared frontend, a
 bytecode interpreter, an AOT compiler, and an initial tracing JIT.
@@ -17,9 +17,11 @@ bytecode interpreter, an AOT compiler, and an initial tracing JIT.
   and disassembly.
 - **Interpreter v0.7 (`sninterp`):** independent bytecode execution with call
   frames, runtime diagnostics, and execution statistics. It does not link LLVM.
-- **AOT compiler v0.8 (`serenity`):** lowers bytecode into textual LLVM IR and
-  invokes the installed `clang++` driver to produce native executables.
-- **Tracing JIT v0.9.2 (`snjit`):** runs the same bytecode in the interpreter,
+- **AOT compiler v0.10 (`serenity`):** lowers bytecode into textual LLVM IR,
+  parses and optimizes it through LLVM's C++ APIs, and emits native object code
+  through `TargetMachine`. The platform linker combines the object with the
+  Serenity runtime; the compiler does not spawn `clang` or `clang++`.
+- **Tracing JIT v0.9.3 (`snjit`):** runs the same bytecode in the interpreter,
   profiles backward loop edges, records hot execution paths, lowers supported
   integer/boolean traces to LLVM IR, and compiles them in-process through LLVM
   ORC LLJIT. Unsupported loops remain interpreted.
@@ -50,17 +52,18 @@ explicit `LLVM_DIR` argument above removes any ambiguity. A successful CMake
 configuration should print a message similar to:
 
 ```text
-Serenity tracing JIT: LLVM <version> found at <...>/lib/cmake/llvm
+Serenity native backend: LLVM <version> found at <...>/lib/cmake/llvm
 ```
 
-If CMake reports that the LLVM development package was not found, `snjit` is
-built as an explicit unavailable stub. The other tools still build, and
-`sninterp` remains entirely independent of LLVM. Check that Homebrew's LLVM
-package contains `include/llvm` and `lib/cmake/llvm/LLVMConfig.cmake`, then
-reconfigure with the `LLVM_DIR` command above.
+If CMake reports that the LLVM development package was not found, `snjit` and
+native AOT object generation are built as explicit unavailable stubs. The
+frontend and `sninterp` still build, and `sninterp` does not link LLVM. Check
+that Homebrew's LLVM package contains `include/llvm` and
+`lib/cmake/llvm/LLVMConfig.cmake`, then reconfigure with the `LLVM_DIR` command
+above.
 
 
-## LLVM 23.1.x compatibility update (v0.9.2)
+## LLVM 23.1.x compatibility update (v0.9.3)
 
 The ORC backend includes `llvm/IRReader/IRReader.h` for the C++ `llvm::parseIR`
 API, and passes `LLJIT::getTargetTriple()` directly to
@@ -96,11 +99,19 @@ Compile ahead of time:
 ./build/aot_demo
 ```
 
-Emit LLVM IR from the AOT compiler:
+Emit LLVM IR or a native object file:
 
 ```sh
 ./build/serenity examples/aot_demo.sn --emit-llvm -o build/aot_demo.ll
+./build/serenity examples/aot_demo.sn --emit-object -o build/aot_demo.o
 ```
+
+The compiler parses the generated IR into an `llvm::Module`, verifies it,
+runs LLVM's new-pass-manager optimization pipeline for `-O1` through `-O3`,
+and emits a native object file with LLVM `TargetMachine`. On macOS, Serenity
+then invokes `/usr/bin/ld` directly to link that object with
+`libserenity_runtime.a`, `libc++`, and `libSystem`. It does not invoke
+`clang` or `clang++` during AOT compilation.
 
 ## Tracing JIT architecture
 
@@ -200,3 +211,31 @@ profiling and compilation overhead.
 See `docs/JIT_v0.9.md` for the detailed trace format, bytecode hook contract,
 LLVM lowering, statistics, and limitations. Earlier milestone documents remain
 in `docs/`.
+
+
+## v0.9.3 hotfix
+
+Guard failures (integer overflow, division/remainder faults, invalid shifts, and integer-negation overflow) now return a distinct deoptimization exit code. The interpreter resumes at the guarded bytecode instruction with the complete pre-operation operand stack restored. Runtime statistics count these as `deoptimizations`; changed branch outcomes remain `sideExits`, and instruction-budget exits remain `budgetExits`.
+
+
+## Direct LLVM AOT backend (v0.10)
+
+The v0.10 AOT backend no longer delegates IR compilation to the Clang driver.
+The existing bytecode-to-textual-IR emitter remains the Serenity-owned lowering
+step. `LLVMBackend` parses that text with `llvm::parseIR`, assigns the host
+target triple and data layout, verifies the module, runs the LLVM PassBuilder
+pipeline selected by `-O0` through `-O3`, and emits an object file using
+`TargetMachine::addPassesToEmitFile`.
+
+On macOS, the final executable is linked by invoking the platform linker
+(`/usr/bin/ld`) directly. CMake discovers the macOS SDK using `xcrun` and records
+the SDK path/version in the compiler. The link step combines the generated
+object, Serenity's static runtime archive, `libc++`, and `libSystem`. This
+link step is not performed by LLVM's TargetMachine: LLVM emits the object; the
+platform linker resolves runtime and operating-system symbols.
+
+`--emit-object` writes the LLVM-generated object file without linking it.
+`--emit-llvm` continues to write the pre-optimization textual IR for
+inspection. `sninterp` remains independent of LLVM. Direct executable linking
+is currently implemented for macOS; on other hosts, `--emit-object` is
+available while the final platform-specific link integration is future work.

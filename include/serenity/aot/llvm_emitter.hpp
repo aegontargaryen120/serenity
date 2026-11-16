@@ -25,7 +25,8 @@ struct LLVMResult {
 // Lowers Serenity's validated bytecode module into textual LLVM IR. The
 // generated module uses native LLVM functions for Serenity functions and
 // control flow, with a small C ABI runtime for tagged values and heap objects.
-// This keeps the backend independent of LLVM's C++ library ABI.
+// LLVMBackend then parses this IR, optimizes it, and emits native object code
+// through LLVM's C++ APIs.
 class LLVMIREmitter {
 public:
     explicit LLVMIREmitter(const bytecode::BytecodeModule& module);

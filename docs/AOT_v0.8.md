@@ -1,12 +1,12 @@
-# Serenity AOT Compiler v0.8
+# Serenity AOT Compiler v0.8 (historical driver-based implementation)
 
 ## Purpose
 
 `serenity` compiles Serenity source files ahead of time into native executables.
 The compiler runs the same source frontend and bytecode generator used by
-`sninterp`. The AOT backend then lowers that bytecode module into textual LLVM
-IR and invokes the installed `clang++` driver to optimize, generate native code,
-and link the Serenity runtime.
+`sninterp`. The v0.8 implementation lowered that bytecode module into textual LLVM IR and
+invoked `clang++`. This implementation was replaced in v0.10 by an in-process
+LLVM C++ API backend.
 
 This makes the bytecode module the shared execution representation for the
 interpreter and the future tracing JIT, while allowing AOT compilation to use

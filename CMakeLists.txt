@@ -8,12 +8,15 @@ if(EXISTS "/opt/homebrew/opt/llvm/bin/clang" AND
     set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
 endif()
 
-project(serenity VERSION 0.9.2 LANGUAGES C CXX)
+project(serenity VERSION 0.10.0 LANGUAGES C CXX)
 
 option(SERENITY_REQUIRE_LLVM
-    "Fail configuration unless LLVM ORC development libraries are available"
+    "Fail configuration unless LLVM development libraries for AOT/JIT are available"
     OFF
 )
+
+set(SERENITY_MACOS_MIN_VERSION "13.0" CACHE STRING
+    "Minimum macOS deployment target for directly linked Serenity executables")
 
 # Homebrew LLVM installs its CMake package beneath this prefix.
 if(EXISTS "/opt/homebrew/opt/llvm/lib/cmake/llvm")
@@ -25,12 +28,77 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_program(SERENITY_CLANGXX_EXECUTABLE
-    NAMES clang++
-    HINTS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin
-)
-if(NOT SERENITY_CLANGXX_EXECUTABLE)
-    set(SERENITY_CLANGXX_EXECUTABLE "clang++")
+if(SERENITY_REQUIRE_LLVM AND NOT LLVM_FOUND)
+    message(FATAL_ERROR
+        "LLVM development package not found. Set LLVM_DIR to the directory "
+        "containing LLVMConfig.cmake (Homebrew: /opt/homebrew/opt/llvm/lib/cmake/llvm).")
+endif()
+
+function(serenity_link_llvm target)
+    if(LLVM_FOUND)
+        target_include_directories(${target} SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+        target_compile_definitions(${target} PRIVATE SERENITY_HAS_LLVM=1)
+        separate_arguments(SERENITY_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+        target_compile_options(${target} PRIVATE ${SERENITY_LLVM_DEFINITIONS})
+        if(TARGET LLVM)
+            target_link_libraries(${target} PRIVATE LLVM)
+        else()
+            llvm_map_components_to_libnames(SERENITY_LLVM_LIBS
+                Core Support OrcJIT ExecutionEngine RuntimeDyld Object
+                native nativecodegen
+                IRReader AsmParser Analysis TransformUtils ScalarOpts InstCombine
+                IPO Vectorize Passes CodeGen MC Target TargetParser AsmPrinter)
+            target_link_libraries(${target} PRIVATE ${SERENITY_LLVM_LIBS})
+        endif()
+    else()
+        target_compile_definitions(${target} PRIVATE SERENITY_HAS_LLVM=0)
+    endif()
+endfunction()
+
+if(LLVM_FOUND)
+    message(STATUS "Serenity native backend: LLVM ${LLVM_PACKAGE_VERSION} found at ${LLVM_DIR}")
+else()
+    message(WARNING "LLVM development package not found: snjit and native AOT object generation will be unavailable. sninterp remains fully usable.")
+endif()
+
+set(SERENITY_MACOS_SDKROOT "")
+set(SERENITY_MACOS_SDK_VERSION "")
+if(APPLE)
+    if(EXISTS "/usr/bin/ld")
+        set(SERENITY_LINKER_EXECUTABLE "/usr/bin/ld")
+    else()
+        find_program(SERENITY_LINKER_EXECUTABLE NAMES ld)
+    endif()
+
+    # Honor an explicit CMake sysroot first; otherwise ask Xcode/Command Line
+    # Tools for the active macOS SDK.
+    if(CMAKE_OSX_SYSROOT AND IS_DIRECTORY "${CMAKE_OSX_SYSROOT}")
+        set(SERENITY_MACOS_SDKROOT "${CMAKE_OSX_SYSROOT}")
+    endif()
+
+    find_program(SERENITY_XCRUN_EXECUTABLE NAMES xcrun)
+    if(SERENITY_XCRUN_EXECUTABLE)
+        if(NOT SERENITY_MACOS_SDKROOT)
+            execute_process(
+                COMMAND "${SERENITY_XCRUN_EXECUTABLE}" --sdk macosx --show-sdk-path
+                OUTPUT_VARIABLE SERENITY_MACOS_SDKROOT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE SERENITY_XCRUN_PATH_RESULT
+            )
+            if(NOT SERENITY_XCRUN_PATH_RESULT EQUAL 0)
+                set(SERENITY_MACOS_SDKROOT "")
+            endif()
+        endif()
+        execute_process(
+            COMMAND "${SERENITY_XCRUN_EXECUTABLE}" --sdk macosx --show-sdk-version
+            OUTPUT_VARIABLE SERENITY_MACOS_SDK_VERSION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE SERENITY_XCRUN_VERSION_RESULT
+        )
+        if(NOT SERENITY_XCRUN_VERSION_RESULT EQUAL 0)
+            set(SERENITY_MACOS_SDK_VERSION "")
+        endif()
+    endif()
 endif()
 
 add_library(serenity_lexer src/lexer/lexer.cpp)
@@ -68,11 +136,16 @@ target_link_libraries(serenity_interpreter PUBLIC serenity_bytecode)
 add_library(serenity_runtime STATIC src/runtime/runtime.cpp)
 target_include_directories(serenity_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# Serenity emits textual LLVM IR and uses the installed clang++ driver to lower
-# and link it. This avoids coupling the compiler binary to LLVM's C++ library ABI.
-add_library(serenity_aot src/aot/llvm_emitter.cpp)
+# Serenity emits textual LLVM IR, then parses, optimizes, and lowers it through
+# LLVM's C++ APIs. The platform linker is invoked directly for final executable
+# linking; clang/clang++ are not spawned by the Serenity compiler.
+add_library(serenity_aot
+    src/aot/llvm_emitter.cpp
+    src/aot/llvm_backend.cpp
+)
 target_include_directories(serenity_aot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(serenity_aot PUBLIC serenity_bytecode)
+serenity_link_llvm(serenity_aot)
 
 add_executable(sninterp src/main/sninterp.cpp)
 target_link_libraries(sninterp PRIVATE serenity_interpreter serenity_preprocessor)
@@ -80,29 +153,7 @@ target_link_libraries(sninterp PRIVATE serenity_interpreter serenity_preprocesso
 add_library(serenity_jit src/jit/jit.cpp)
 target_include_directories(serenity_jit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(serenity_jit PUBLIC serenity_interpreter)
-if(LLVM_FOUND)
-    message(STATUS "Serenity tracing JIT: LLVM ${LLVM_PACKAGE_VERSION} found at ${LLVM_DIR}")
-    target_include_directories(serenity_jit SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
-    target_compile_definitions(serenity_jit PRIVATE SERENITY_HAS_LLVM=1)
-    separate_arguments(SERENITY_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-    target_compile_options(serenity_jit PRIVATE ${SERENITY_LLVM_DEFINITIONS})
-    if(TARGET LLVM)
-        target_link_libraries(serenity_jit PRIVATE LLVM)
-    else()
-        llvm_map_components_to_libnames(SERENITY_LLVM_LIBS
-            Core Support OrcJIT ExecutionEngine RuntimeDyld Object native nativecodegen
-            IRReader AsmParser)
-        target_link_libraries(serenity_jit PRIVATE ${SERENITY_LLVM_LIBS})
-    endif()
-elseif(SERENITY_REQUIRE_LLVM)
-    message(FATAL_ERROR
-        "LLVM development package not found. Set LLVM_DIR to the directory "
-        "containing LLVMConfig.cmake (Homebrew: /opt/homebrew/opt/llvm/lib/cmake/llvm)."
-    )
-else()
-    message(WARNING "LLVM development package not found: snjit will be built as an unavailable stub. Set LLVM_DIR to the directory containing LLVMConfig.cmake or enable SERENITY_REQUIRE_LLVM to make this an error.")
-    target_compile_definitions(serenity_jit PRIVATE SERENITY_HAS_LLVM=0)
-endif()
+serenity_link_llvm(serenity_jit)
 
 add_executable(snjit src/main/snjit.cpp)
 target_link_libraries(snjit PRIVATE serenity_jit serenity_preprocessor)
@@ -110,8 +161,11 @@ target_link_libraries(snjit PRIVATE serenity_jit serenity_preprocessor)
 add_executable(serenity src/main/serenity.cpp)
 target_link_libraries(serenity PRIVATE serenity_aot serenity_preprocessor)
 target_compile_definitions(serenity PRIVATE
-    SERENITY_CLANGXX_PATH="${SERENITY_CLANGXX_EXECUTABLE}"
     SERENITY_RUNTIME_LIBRARY_PATH="$<TARGET_FILE:serenity_runtime>"
+    SERENITY_LINKER_PATH="${SERENITY_LINKER_EXECUTABLE}"
+    SERENITY_MACOS_SDKROOT="${SERENITY_MACOS_SDKROOT}"
+    SERENITY_MACOS_SDK_VERSION="${SERENITY_MACOS_SDK_VERSION}"
+    SERENITY_MACOS_MIN_VERSION="${SERENITY_MACOS_MIN_VERSION}"
 )
 add_dependencies(serenity serenity_runtime)
 
@@ -151,6 +205,14 @@ target_link_libraries(serenity_interpreter_tests PRIVATE serenity_interpreter)
 add_executable(serenity_aot_tests tests/test_aot.cpp)
 target_link_libraries(serenity_aot_tests PRIVATE serenity_aot)
 
+if(LLVM_FOUND)
+    add_executable(serenity_aot_backend_tests tests/test_llvm_backend.cpp)
+    target_link_libraries(serenity_aot_backend_tests PRIVATE serenity_aot)
+    target_compile_options(serenity_aot_backend_tests PRIVATE
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
+    )
+endif()
+
 add_executable(serenity_jit_tests tests/test_jit.cpp)
 target_link_libraries(serenity_jit_tests PRIVATE serenity_jit)
 
@@ -173,11 +235,16 @@ add_test(NAME serenity_bytecode_tests COMMAND serenity_bytecode_tests)
 add_test(NAME serenity_interpreter_tests COMMAND serenity_interpreter_tests)
 add_test(NAME serenity_aot_tests COMMAND serenity_aot_tests)
 add_test(NAME serenity_jit_tests COMMAND serenity_jit_tests)
-add_test(NAME serenity_aot_smoke
-    COMMAND ${CMAKE_COMMAND}
-        -DSERENITY=$<TARGET_FILE:serenity>
-        -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/aot_demo.sn
-        -DSNINTERP=$<TARGET_FILE:sninterp>
-        -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/serenity_aot_smoke
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_aot_smoke.cmake
-)
+if(LLVM_FOUND)
+    add_test(NAME serenity_aot_backend_tests COMMAND serenity_aot_backend_tests)
+endif()
+if(LLVM_FOUND AND APPLE)
+    add_test(NAME serenity_aot_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DSERENITY=$<TARGET_FILE:serenity>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/aot_demo.sn
+            -DSNINTERP=$<TARGET_FILE:sninterp>
+            -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/serenity_aot_smoke
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_aot_smoke.cmake
+    )
+endif()

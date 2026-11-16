@@ -1,3 +1,4 @@
+#include "serenity/aot/llvm_backend.hpp"
 #include "serenity/aot/llvm_emitter.hpp"
 #include "serenity/bytecode/generator.hpp"
 #include "serenity/lexer/lexer.hpp"
@@ -6,19 +7,26 @@
 #include "serenity/semantic/analyzer.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <system_error>
 
-#ifndef SERENITY_CLANGXX_PATH
-#define SERENITY_CLANGXX_PATH "clang++"
-#endif
-
 #ifndef SERENITY_RUNTIME_LIBRARY_PATH
 #define SERENITY_RUNTIME_LIBRARY_PATH ""
+#endif
+#ifndef SERENITY_LINKER_PATH
+#define SERENITY_LINKER_PATH ""
+#endif
+#ifndef SERENITY_MACOS_SDKROOT
+#define SERENITY_MACOS_SDKROOT ""
+#endif
+#ifndef SERENITY_MACOS_SDK_VERSION
+#define SERENITY_MACOS_SDK_VERSION ""
+#endif
+#ifndef SERENITY_MACOS_MIN_VERSION
+#define SERENITY_MACOS_MIN_VERSION "13.0"
 #endif
 
 namespace {
@@ -55,30 +63,22 @@ int reportPreprocessDiagnostics(const serenity::PreprocessResult& result) {
     return hasErrors ? 1 : 0;
 }
 
-[[nodiscard]] std::string shellQuote(const std::string& value) {
-    std::string result = "'";
-    for (char ch : value) {
-        if (ch == '\'') result += "'\\''";
-        else result += ch;
-    }
-    result += '\'';
-    return result;
-}
-
 struct Options {
     std::filesystem::path input;
     std::filesystem::path output;
     bool emitLLVM {false};
+    bool emitObject {false};
     std::string optimization {"-O0"};
 };
 
 void usage(std::ostream& out, const char* executable) {
-    out << "Serenity AOT compiler v0.8\n"
-        << "Usage: " << executable << " <source.sn> [-o output] [-O0|-O1|-O2|-O3] [--emit-llvm]\n\n"
+    out << "Serenity AOT compiler v0.10.0\n"
+        << "Usage: " << executable << " <source.sn> [-o output] [-O0|-O1|-O2|-O3] [--emit-llvm|--emit-object]\n\n"
         << "Options:\n"
-        << "  -o <path>       Output executable (or .ll file with --emit-llvm)\n"
+        << "  -o <path>       Output executable, .ll file, or object file\n"
         << "  -O0..-O3        Select LLVM optimization level (default: -O0)\n"
-        << "  --emit-llvm     Write LLVM IR instead of linking an executable\n"
+        << "  --emit-llvm     Write textual LLVM IR without compiling it\n"
+        << "  --emit-object   Write a native object file without linking\n"
         << "  -h, --help      Show this help\n"
         << "  --version       Show compiler version\n";
 }
@@ -97,7 +97,19 @@ bool parseOptions(int argc, char** argv, Options& options, bool& showHelp, bool&
             return true;
         }
         if (argument == "--emit-llvm") {
+            if (options.emitObject) {
+                std::cerr << "error: --emit-llvm and --emit-object are mutually exclusive\n";
+                return false;
+            }
             options.emitLLVM = true;
+            continue;
+        }
+        if (argument == "--emit-object") {
+            if (options.emitLLVM) {
+                std::cerr << "error: --emit-llvm and --emit-object are mutually exclusive\n";
+                return false;
+            }
+            options.emitObject = true;
             continue;
         }
         if (argument == "-o") {
@@ -117,7 +129,7 @@ bool parseOptions(int argc, char** argv, Options& options, bool& showHelp, bool&
             return false;
         }
         if (!options.input.empty()) {
-            std::cerr << "error: only one input source file is supported in v0.8\n";
+            std::cerr << "error: only one input source file is supported\n";
             return false;
         }
         options.input = argument;
@@ -128,12 +140,12 @@ bool parseOptions(int argc, char** argv, Options& options, bool& showHelp, bool&
     }
     if (options.output.empty()) {
         options.output = options.input;
-        options.output.replace_extension(options.emitLLVM ? ".ll" : "");
-        if (options.output.empty()) options.output = options.emitLLVM ? "a.out.ll" : "a.out";
-    }
-    if (options.emitLLVM && options.output.extension() != ".ll") {
-        // Keep the explicitly requested -o path, but the default has already
-        // received .ll above. This allows scripts to choose arbitrary names.
+        if (options.emitLLVM) options.output.replace_extension(".ll");
+        else if (options.emitObject) options.output.replace_extension(".o");
+        else options.output.replace_extension("");
+        if (options.output.empty()) {
+            options.output = options.emitLLVM ? "a.out.ll" : (options.emitObject ? "a.out.o" : "a.out");
+        }
     }
     return true;
 }
@@ -218,37 +230,42 @@ int compile(const Options& options) {
         return 0;
     }
 
+    std::filesystem::path objectPath = absoluteOutput;
+    if (!options.emitObject) {
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        objectPath = std::filesystem::temp_directory_path() /
+            ("serenity-aot-" + std::to_string(stamp) + ".o");
+    }
+
+    const serenity::aot::LLVMBackendResult objectResult =
+        serenity::aot::LLVMBackend::emitObjectFile(*lowered.ir, objectPath, options.optimization);
+    if (!objectResult.ok()) {
+        std::cerr << "error: LLVM native object generation: " << objectResult.message << '\n';
+        return 1;
+    }
+
+    if (options.emitObject) {
+        std::cout << "Generated native object file: " << absoluteOutput.string() << '\n';
+        return 0;
+    }
+
     const std::filesystem::path runtimeLibrary = SERENITY_RUNTIME_LIBRARY_PATH;
     if (runtimeLibrary.empty() || !std::filesystem::exists(runtimeLibrary)) {
+        std::filesystem::remove(objectPath, filesystemError);
         std::cerr << "error: Serenity runtime library was not found. Rebuild the project with CMake.\n";
         return 1;
     }
 
-    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const std::filesystem::path temporaryIR = std::filesystem::temp_directory_path() /
-        ("serenity-aot-" + std::to_string(stamp) + ".ll");
-    {
-        std::ofstream output(temporaryIR, std::ios::binary);
-        if (!output) {
-            std::cerr << "error: cannot create temporary LLVM IR file\n";
-            return 1;
-        }
-        output << *lowered.ir;
-        if (!output) {
-            std::cerr << "error: failed while writing temporary LLVM IR\n";
-            std::filesystem::remove(temporaryIR, filesystemError);
-            return 1;
-        }
-    }
-
-    const std::string command = shellQuote(SERENITY_CLANGXX_PATH) + " " + options.optimization +
-        " -Wno-override-module " + shellQuote(temporaryIR.string()) + " " + shellQuote(runtimeLibrary.string()) +
-        " -o " + shellQuote(absoluteOutput.string());
-    const int compilerStatus = std::system(command.c_str());
-    std::filesystem::remove(temporaryIR, filesystemError);
-    if (compilerStatus != 0) {
-        std::cerr << "error: LLVM native code generation/linking failed (command status "
-                  << compilerStatus << ")\n";
+    serenity::aot::NativeLinkOptions linkOptions;
+    linkOptions.linker = SERENITY_LINKER_PATH;
+    linkOptions.sdkRoot = SERENITY_MACOS_SDKROOT;
+    linkOptions.sdkVersion = SERENITY_MACOS_SDK_VERSION;
+    linkOptions.minimumMacOSVersion = SERENITY_MACOS_MIN_VERSION;
+    const serenity::aot::LLVMBackendResult linkResult =
+        serenity::aot::LLVMBackend::linkExecutable(objectPath, runtimeLibrary, absoluteOutput, linkOptions);
+    std::filesystem::remove(objectPath, filesystemError);
+    if (!linkResult.ok()) {
+        std::cerr << "error: native executable linking: " << linkResult.message << '\n';
         return 1;
     }
 
@@ -271,7 +288,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (showVersion) {
-        std::cout << "Serenity AOT compiler 0.8.0\n";
+        std::cout << "Serenity AOT compiler 0.10.0\n";
         return 0;
     }
     return compile(options);
