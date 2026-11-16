@@ -1,6 +1,7 @@
 #include "serenity/preprocessor/preprocessor.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <system_error>
@@ -8,6 +9,25 @@
 
 namespace serenity {
 namespace {
+
+#ifndef SERENITY_STDLIB_DIRECTORY
+#define SERENITY_STDLIB_DIRECTORY ""
+#endif
+
+[[nodiscard]] std::filesystem::path configuredStandardLibraryDirectory(
+    const PreprocessorOptions& options) {
+    if (!options.standardLibraryDirectory.empty()) {
+        return options.standardLibraryDirectory;
+    }
+
+    if (const char* environmentPath = std::getenv("SERENITY_STDLIB_PATH");
+        environmentPath != nullptr && environmentPath[0] != '\0') {
+        return std::filesystem::path(environmentPath);
+    }
+
+    const std::filesystem::path buildDefault {SERENITY_STDLIB_DIRECTORY};
+    return buildDefault;
+}
 
 [[nodiscard]] bool isHorizontalWhitespace(char c) noexcept {
     return c == ' ' || c == '\t' || c == '\f' || c == '\v';
@@ -370,20 +390,43 @@ std::optional<std::filesystem::path> Preprocessor::resolveInclude(
     }
 
     const std::filesystem::path baseDirectory = includingFile.parent_path();
-    const std::filesystem::path candidate = requested.is_absolute()
+    const std::filesystem::path localCandidate = requested.is_absolute()
         ? requested
         : baseDirectory / requested;
-    const std::filesystem::path resolved = normalizedPath(candidate);
+    std::filesystem::path resolved = normalizedPath(localCandidate);
 
     std::error_code error;
-    if (!std::filesystem::exists(resolved, error) || error) {
+    bool exists = std::filesystem::exists(resolved, error) && !error;
+
+    // Quoted project-relative headers take precedence. The standard-library
+    // fallback is used only when a relative include cannot be found beside
+    // the including file. Absolute paths are never redirected.
+    if (!exists && !requested.is_absolute()) {
+        const std::filesystem::path standardRoot =
+            configuredStandardLibraryDirectory(options_);
+        if (!standardRoot.empty()) {
+            const std::filesystem::path standardCandidate =
+                normalizedPath(standardRoot / requested);
+            error.clear();
+            if (std::filesystem::exists(standardCandidate, error) && !error) {
+                resolved = standardCandidate;
+                exists = true;
+            }
+        }
+    }
+
+    if (!exists) {
         addDiagnostic(
             PreprocessSeverity::Error,
-            "included header '" + pathForMessage(resolved) + "' does not exist",
+            "included header '" + pathForMessage(requested) +
+                "' was not found relative to '" + pathForMessage(baseDirectory) +
+                "' or in the Serenity standard library",
             directiveOrigin.file,
             directiveOrigin.location);
         return std::nullopt;
     }
+
+    error.clear();
     if (!std::filesystem::is_regular_file(resolved, error) || error) {
         addDiagnostic(
             PreprocessSeverity::Error,

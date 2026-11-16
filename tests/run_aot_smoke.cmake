@@ -32,7 +32,11 @@ if(NOT interpreter_result EQUAL 0)
     message(FATAL_ERROR "sninterp execution failed with ${interpreter_result}.\n${interpreter_stdout}\n${interpreter_stderr}")
 endif()
 
-set(expected "Serenity\n120\n7\n3.5\n4\nAOT OK\n")
+if(DEFINED EXPECTED_FILE)
+    file(READ "${EXPECTED_FILE}" expected)
+else()
+    set(expected "Serenity\n120\n7\n3.5\n4\nAOT OK\n")
+endif()
 if(NOT run_stdout STREQUAL expected)
     message(FATAL_ERROR "Unexpected AOT output.\nExpected: [${expected}]\nActual: [${run_stdout}]\n${run_stderr}")
 endif()
@@ -41,4 +45,18 @@ if(NOT interpreter_stdout STREQUAL expected)
 endif()
 if(NOT run_stdout STREQUAL interpreter_stdout)
     message(FATAL_ERROR "AOT and interpreter output differ.\nAOT: [${run_stdout}]\nInterpreter: [${interpreter_stdout}]")
+endif()
+if(DEFINED SNJIT)
+    execute_process(
+        COMMAND "${SNJIT}" "${SOURCE}" --hot-threshold 4
+        RESULT_VARIABLE jit_result
+        OUTPUT_VARIABLE jit_stdout
+        ERROR_VARIABLE jit_stderr
+    )
+    if(NOT jit_result EQUAL 0)
+        message(FATAL_ERROR "snjit execution failed with ${jit_result}.\n${jit_stdout}\n${jit_stderr}")
+    endif()
+    if(NOT jit_stdout STREQUAL expected)
+        message(FATAL_ERROR "Unexpected JIT output.\nExpected: [${expected}]\nActual: [${jit_stdout}]\n${jit_stderr}")
+    endif()
 endif()

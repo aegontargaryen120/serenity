@@ -1,9 +1,14 @@
-# Serenity v0.10 — direct LLVM AOT backend
+# Serenity v0.11 — initial standard library
 
 Serenity is a statically typed compiled language with a shared frontend, a
 bytecode interpreter, an AOT compiler, and an initial tracing JIT.
 
 ## Current components
+
+- **Standard library v0.11:** initial `std/math.snh` header with integer,
+  float, and double helpers. Standard headers are textually included and remain
+  ordinary Serenity code, so the interpreter, JIT, and AOT use the same
+  implementation.
 
 - **Lexer v0.1:** tokenization and lexical diagnostics.
 - **Preprocessor v0.2:** `%include` expansion, relative path resolution,
@@ -75,6 +80,43 @@ non-monolithic LLVM-library configuration.
 After updating, remove the old CMake build directory and configure again.
 Only run CTest after `cmake --build` completes successfully, because a
 failed build can leave registered test executables missing.
+
+## Standard library
+
+Include the initial math library in a Serenity source file:
+
+```serenity
+%include "std/math.snh"
+
+func main() => int {
+    println(absInt(-42));
+    println(minInt(12, 5));
+    println(clampInt(120, 0, 100));
+    println(isEven(42));
+    return 0;
+}
+```
+
+Run the same program in each execution mode:
+
+```sh
+./build/sninterp examples/stdlib_demo.sn
+./build/snjit examples/stdlib_demo.sn --stats
+./build/serenity examples/stdlib_demo.sn -o build/stdlib_demo -O2
+./build/stdlib_demo
+```
+
+Quoted includes first resolve relative to the file containing the directive.
+If a relative header is not found there, the preprocessor searches the
+configured Serenity standard-library directory. CMake points this directory
+at the project's `stdlib/` folder. Set `SERENITY_STDLIB_PATH` to override it at
+runtime. This is a single standard-library fallback, not general `-I` support.
+
+The initial library contains `stdlib/std/math.snh`. Since function overloading
+is not implemented yet, functions use type-suffixed names such as `absInt`,
+`absFloat`, and `absDouble`. `print` and `println` remain language built-ins;
+input, string utilities, collections, and filesystem APIs are not part of this
+first release.
 
 ## Run a Serenity program
 

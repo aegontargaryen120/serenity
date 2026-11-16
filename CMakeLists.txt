@@ -8,7 +8,7 @@ if(EXISTS "/opt/homebrew/opt/llvm/bin/clang" AND
     set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
 endif()
 
-project(serenity VERSION 0.10.0 LANGUAGES C CXX)
+project(serenity VERSION 0.11.0 LANGUAGES C CXX)
 
 option(SERENITY_REQUIRE_LLVM
     "Fail configuration unless LLVM development libraries for AOT/JIT are available"
@@ -106,6 +106,9 @@ target_include_directories(serenity_lexer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/inc
 
 add_library(serenity_preprocessor src/preprocessor/preprocessor.cpp)
 target_include_directories(serenity_preprocessor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(serenity_preprocessor PRIVATE
+    SERENITY_STDLIB_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/stdlib"
+)
 
 add_library(serenity_ast INTERFACE)
 target_include_directories(serenity_ast INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -202,6 +205,14 @@ target_link_libraries(serenity_bytecode_tests PRIVATE serenity_bytecode)
 add_executable(serenity_interpreter_tests tests/test_interpreter.cpp)
 target_link_libraries(serenity_interpreter_tests PRIVATE serenity_interpreter)
 
+add_executable(serenity_stdlib_tests tests/test_stdlib.cpp)
+target_link_libraries(serenity_stdlib_tests PRIVATE
+    serenity_preprocessor serenity_lexer serenity_parser serenity_semantic
+    serenity_bytecode serenity_interpreter)
+target_compile_definitions(serenity_stdlib_tests PRIVATE
+    SERENITY_STDLIB_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/examples/stdlib_demo.sn"
+)
+
 add_executable(serenity_aot_tests tests/test_aot.cpp)
 target_link_libraries(serenity_aot_tests PRIVATE serenity_aot)
 
@@ -217,8 +228,8 @@ add_executable(serenity_jit_tests tests/test_jit.cpp)
 target_link_libraries(serenity_jit_tests PRIVATE serenity_jit)
 
 foreach(target serenity_ast_tests serenity_parser_tests serenity_semantic_tests
-               serenity_bytecode_tests serenity_interpreter_tests serenity_aot_tests
-               serenity_jit_tests)
+               serenity_bytecode_tests serenity_interpreter_tests serenity_stdlib_tests
+               serenity_aot_tests serenity_jit_tests)
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -233,6 +244,7 @@ add_test(NAME serenity_parser_tests COMMAND serenity_parser_tests)
 add_test(NAME serenity_semantic_tests COMMAND serenity_semantic_tests)
 add_test(NAME serenity_bytecode_tests COMMAND serenity_bytecode_tests)
 add_test(NAME serenity_interpreter_tests COMMAND serenity_interpreter_tests)
+add_test(NAME serenity_stdlib_tests COMMAND serenity_stdlib_tests)
 add_test(NAME serenity_aot_tests COMMAND serenity_aot_tests)
 add_test(NAME serenity_jit_tests COMMAND serenity_jit_tests)
 if(LLVM_FOUND)
@@ -245,6 +257,16 @@ if(LLVM_FOUND AND APPLE)
             -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/aot_demo.sn
             -DSNINTERP=$<TARGET_FILE:sninterp>
             -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/serenity_aot_smoke
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_aot_smoke.cmake
+    )
+    add_test(NAME serenity_stdlib_aot_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DSERENITY=$<TARGET_FILE:serenity>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/stdlib_demo.sn
+            -DSNINTERP=$<TARGET_FILE:sninterp>
+            -DSNJIT=$<TARGET_FILE:snjit>
+            -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/serenity_stdlib_aot_smoke
+            -DEXPECTED_FILE=${CMAKE_CURRENT_SOURCE_DIR}/examples/stdlib_demo.expected
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_aot_smoke.cmake
     )
 endif()

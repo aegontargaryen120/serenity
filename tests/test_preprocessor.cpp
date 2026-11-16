@@ -115,6 +115,21 @@ int main() {
     require(!missing.diagnostics.empty() && missing.diagnostics.front().origin.location.line == 1,
         "include diagnostics should point to the directive line");
 
+    // Standard-library lookup is a fallback after the including file's directory.
+    writeFile(root / "standard-library" / "std" / "example.snh",
+        "func fromStandardLibrary() => int { return 23; }\n");
+    serenity::PreprocessorOptions standardOptions;
+    standardOptions.standardLibraryDirectory = root / "standard-library";
+    serenity::Preprocessor standardPreprocessor(standardOptions);
+    const serenity::PreprocessResult standardInclude = standardPreprocessor.preprocessSource(
+        "%include \"std/example.snh\"\n", root / "project" / "main.sn");
+    require(standardInclude.ok(), "missing project-relative headers should fall back to the standard library");
+    require(standardInclude.source.find("fromStandardLibrary") != std::string::npos,
+        "standard-library header should be expanded");
+    const auto standardOrigin = standardInclude.originAt(standardInclude.source.find("fromStandardLibrary"));
+    require(standardOrigin.has_value() && standardOrigin->file.filename() == "example.snh",
+        "source mapping should preserve the standard-library header location");
+
     const serenity::PreprocessResult wrongExtension = preprocessor.preprocessSource(
         "%include \"other.sn\"\n", root / "bad_extension.sn");
     require(!wrongExtension.ok(), "only .snh files should be includable");

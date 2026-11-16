@@ -1,0 +1,99 @@
+// Serenity standard library: integer and floating-point helpers.
+//
+// This header is textually included with:
+//     %include "std/math.snh"
+//
+// Function names are type-suffixed because Serenity v0.1 does not support
+// function overloading yet.
+
+func absInt(int value) => int {
+    if (value < 0) {
+        return -value;
+    }
+    return value;
+}
+
+func minInt(int left, int right) => int {
+    if (left < right) {
+        return left;
+    }
+    return right;
+}
+
+func maxInt(int left, int right) => int {
+    if (left > right) {
+        return left;
+    }
+    return right;
+}
+
+// Requires lower <= upper.
+func clampInt(int value, int lower, int upper) => int {
+    if (value < lower) {
+        return lower;
+    }
+    if (value > upper) {
+        return upper;
+    }
+    return value;
+}
+
+func signInt(int value) => int {
+    if (value < 0) {
+        return -1;
+    }
+    if (value > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func isEven(int value) => bool {
+    return (value %% 2) == 0;
+}
+
+func isOdd(int value) => bool {
+    return (value %% 2) =/= 0;
+}
+
+func absFloat(float value) => float {
+    if (value < 0.0) {
+        return -value;
+    }
+    return value;
+}
+
+func minFloat(float left, float right) => float {
+    if (left < right) {
+        return left;
+    }
+    return right;
+}
+
+func maxFloat(float left, float right) => float {
+    if (left > right) {
+        return left;
+    }
+    return right;
+}
+
+func absDouble(double value) => double {
+    if (value < 0.0) {
+        return -value;
+    }
+    return value;
+}
+
+func minDouble(double left, double right) => double {
+    if (left < right) {
+        return left;
+    }
+    return right;
+}
+
+func maxDouble(double left, double right) => double {
+    if (left > right) {
+        return left;
+    }
+    return right;
+}

@@ -52,6 +52,12 @@ struct PreprocessorOptions {
     // Protects against pathological include chains. Circular includes are
     // separately detected and skipped using automatic header guards.
     std::size_t maxIncludeDepth {256};
+
+    // Optional Serenity standard-library root. User-relative includes are
+    // searched first; unresolved relative paths are then searched beneath this
+    // directory. When empty, SERENITY_STDLIB_PATH or the build-time default is
+    // used. This is not a general-purpose -I include path.
+    std::filesystem::path standardLibraryDirectory;
 };
 
 class Preprocessor {

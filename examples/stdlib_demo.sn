@@ -1,0 +1,26 @@
+%include "std/math.snh"
+
+func main() => int {
+    println(absInt(-42));
+    println(minInt(12, 5));
+    println(maxInt(12, 5));
+    println(clampInt(120, 0, 100));
+    println(signInt(-17));
+    println(isEven(42));
+    println(isOdd(41));
+
+    println(absFloat(-3.5));
+    println(minFloat(1.25, 4.5));
+    println(maxFloat(1.25, 4.5));
+    println(absDouble(-12.75));
+
+    mut int index = 0;
+    mut int checksum = 0;
+    while (index < 1000) {
+        checksum += index;
+        index += 1;
+    }
+    println(checksum);
+
+    return 0;
+}

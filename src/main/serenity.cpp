@@ -72,7 +72,7 @@ struct Options {
 };
 
 void usage(std::ostream& out, const char* executable) {
-    out << "Serenity AOT compiler v0.10.0\n"
+    out << "Serenity AOT compiler v0.11.0\n"
         << "Usage: " << executable << " <source.sn> [-o output] [-O0|-O1|-O2|-O3] [--emit-llvm|--emit-object]\n\n"
         << "Options:\n"
         << "  -o <path>       Output executable, .ll file, or object file\n"
@@ -288,7 +288,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (showVersion) {
-        std::cout << "Serenity AOT compiler 0.10.0\n";
+        std::cout << "Serenity AOT compiler 0.11.0\n";
         return 0;
     }
     return compile(options);
