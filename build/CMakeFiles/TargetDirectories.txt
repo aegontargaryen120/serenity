@@ -1,5 +1,0 @@
-/Users/naad/code/serenity/build/CMakeFiles/serenity_lexer.dir
-/Users/naad/code/serenity/build/CMakeFiles/serenity_lexer_tests.dir
-/Users/naad/code/serenity/build/CMakeFiles/test.dir
-/Users/naad/code/serenity/build/CMakeFiles/edit_cache.dir
-/Users/naad/code/serenity/build/CMakeFiles/rebuild_cache.dir

@@ -1,2 +1,0 @@
-/usr/bin/ar qc libserenity_lexer.a CMakeFiles/serenity_lexer.dir/src/lexer/lexer.cpp.o
-/usr/bin/ranlib libserenity_lexer.a

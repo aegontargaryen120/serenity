@@ -1,0 +1,6 @@
+%include "include/math.snh"
+
+func main() => int {
+    println("Serenity preprocessor is working.");
+    return 0;
+}
