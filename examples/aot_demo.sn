@@ -1,0 +1,78 @@
+%include "include/aot_support.snh"
+
+mut int sideEffects = 0;
+
+struct {
+    string name = "Unknown";
+    int age = 0;
+} Person;
+
+enum { North, South, East, West } Direction;
+
+func factorial(int n) => int {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+func mark() => bool {
+    sideEffects += 1;
+    return true;
+}
+
+func main() => int {
+    mut Person person = {
+        .name = "Serenity",
+        .age = 120
+    };
+    person.age += 1;
+
+    Direction direction = Direction.South;
+    mut int cursor = 0;
+    mut int sum = 0;
+    while (cursor < 5) {
+        cursor += 1;
+        if (cursor == 2) {
+            continue;
+        }
+        if (cursor == 4) {
+            break;
+        }
+        sum += cursor;
+    }
+
+    bool defaultsToFalse;
+    string defaultsToNull;
+    bool correctDefaults = (defaultsToFalse == false) && (defaultsToNull == null);
+    bool enumMatches = direction == Direction.South;
+
+    float single = 1.5;
+    float wide = 2.0;
+    double precise = 2.0;
+    double squared = precise * precise;
+    bool floatingPointWorks = (single < wide) && (squared == 4.0);
+
+    int bitwise = (8 >> 1) | (1 << 2);
+    mut int remainder = 10;
+    remainder %%= 4;
+
+    bool andShortCircuit = false && mark();
+    bool orShortCircuit = true || mark();
+    bool noSideEffects = sideEffects == 0;
+
+    if (correctDefaults && enumMatches && floatingPointWorks &&
+        person.age == 121 && sum == 4 && bitwise == 4 && remainder == 2 &&
+        andShortCircuit == false && orShortCircuit && noSideEffects) {
+        println(person.name);
+        println(factorial(5));
+        println(sum + globalCount);
+        println(single + wide);
+        println(squared);
+        println("AOT OK");
+    } else {
+        println("AOT FAILED");
+    }
+
+    return 0;
+}
