@@ -1,14 +1,14 @@
-# Serenity v0.11 — initial standard library
+# Serenity v0.12 — primitive standard I/O
 
 Serenity is a statically typed compiled language with a shared frontend, a
 bytecode interpreter, an AOT compiler, and an initial tracing JIT.
 
 ## Current components
 
-- **Standard library v0.11:** initial `std/math.snh` header with integer,
-  float, and double helpers. Standard headers are textually included and remain
-  ordinary Serenity code, so the interpreter, JIT, and AOT use the same
-  implementation.
+- **Standard library v0.12:** adds primitive `read`/`write` operations and
+  `stdin`, `stdout`, and `stderr` stream handles, with Serenity-level
+  `print`, `println`, `input`, and `error` wrappers in `std/io.snh`. The
+  existing `std/math.snh` remains ordinary Serenity code.
 
 - **Lexer v0.1:** tokenization and lexical diagnostics.
 - **Preprocessor v0.2:** `%include` expansion, relative path resolution,
@@ -17,7 +17,7 @@ bytecode interpreter, an AOT compiler, and an initial tracing JIT.
 - **Parser v0.4:** recursive-descent parser and precedence-aware expressions.
 - **Semantic analysis v0.5:** name/type resolution, signature checking,
   mutability and control-flow context checks.
-- **Bytecode generator v0.6:** fixed-width stack instructions, constants,
+- **Bytecode generator v0.7:** fixed-width stack instructions, constants,
   global/local slots, function calls, control flow, structs/enums, source spans,
   and disassembly.
 - **Interpreter v0.7 (`sninterp`):** independent bytecode execution with call
@@ -107,10 +107,18 @@ Run the same program in each execution mode:
 ```
 
 Quoted includes first resolve relative to the file containing the directive.
-If a relative header is not found there, the preprocessor searches the
-configured Serenity standard-library directory. CMake points this directory
-at the project's `stdlib/` folder. Set `SERENITY_STDLIB_PATH` to override it at
-runtime. This is a single standard-library fallback, not general `-I` support.
+If a relative header is not found there, the preprocessor searches
+`SERENITY_STDLIB_PATH` first and then the CMake-configured project `stdlib/`
+folder. The environment variable must name the directory containing `std/`
+(for example, `$HOME/code/serenity/stdlib`, not `$HOME/code/serenity/stdlib/std`):
+
+```sh
+export SERENITY_STDLIB_PATH="$HOME/code/serenity/stdlib"
+```
+
+A stale or invalid environment override no longer hides the valid CMake
+project default. This remains a single standard-library fallback, not general
+`-I` include-directory support.
 
 The initial library contains `stdlib/std/math.snh`. Since function overloading
 is not implemented yet, functions use type-suffixed names such as `absInt`,

@@ -24,6 +24,9 @@ namespace {
         {"double", TokenType::KwDouble},
         {"bool", TokenType::KwBool},
         {"string", TokenType::KwString},
+        {"any", TokenType::KwAny},
+        {"stream", TokenType::KwStream},
+        {"void", TokenType::KwVoid},
         {"true", TokenType::KwTrue},
         {"false", TokenType::KwFalse},
         {"null", TokenType::KwNull},
@@ -57,6 +60,9 @@ std::string_view tokenTypeName(TokenType type) noexcept {
     case TokenType::KwDouble: return "double";
     case TokenType::KwBool: return "bool";
     case TokenType::KwString: return "string";
+    case TokenType::KwAny: return "any";
+    case TokenType::KwStream: return "stream";
+    case TokenType::KwVoid: return "void";
     case TokenType::KwTrue: return "true";
     case TokenType::KwFalse: return "false";
     case TokenType::KwNull: return "null";

@@ -286,6 +286,14 @@ private:
             branchNext();
             break;
 
+        case Opcode::PushStream:
+        case Opcode::StreamRead:
+        case Opcode::StreamWrite:
+        case Opcode::Print:
+        case Opcode::Println:
+            error = "I/O instructions are interpreted and cannot be included in a native trace";
+            return false;
+
         case Opcode::PushConstant: {
             if (instruction.operand < 0 ||
                 static_cast<std::size_t>(instruction.operand) >= module_.constants.size()) {

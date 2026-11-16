@@ -94,6 +94,7 @@ std::string disassemble(const BytecodeModule& module) {
                 instruction.opcode == Opcode::Call ||
                 instruction.opcode == Opcode::NewStruct ||
                 instruction.opcode == Opcode::PushEnum ||
+                instruction.opcode == Opcode::PushStream ||
                 instruction.opcode == Opcode::GetField ||
                 instruction.opcode == Opcode::SetField) {
                 output << " " << instruction.operand;

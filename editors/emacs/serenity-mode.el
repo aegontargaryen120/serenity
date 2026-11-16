@@ -4,7 +4,7 @@
 ;; SPDX-License-Identifier: MIT
 
 ;; Author: Serenity language contributors
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Keywords: languages, serenity
 
 ;;; Commentary:
@@ -16,6 +16,7 @@
 ;; - Both single-quoted and double-quoted strings.
 ;; - Basic brace-aware indentation.
 ;; - Automatic association with .sn and .snh files.
+;; - Highlighting for generic/runtime types, standard stream handles, and I/O functions.
 ;;
 ;; To use this file, put it somewhere on your Emacs `load-path` and add:
 ;;
@@ -62,12 +63,12 @@
   "Serenity control-flow and declaration keywords.")
 
 (defconst serenity--types
-  '("int" "float" "double" "bool" "string")
-  "Serenity primitive type names.")
+  '("int" "float" "double" "bool" "string" "any" "stream" "void")
+  "Serenity primitive and runtime type names.")
 
 (defconst serenity--constants
-  '("true" "false" "null")
-  "Serenity literal constants.")
+  '("true" "false" "null" "stdout" "stdin" "stderr")
+  "Serenity literal constants and standard stream handles.")
 
 (defconst serenity--operators
   (regexp-opt '("%%=" "=/=" "=>" "==" "<=" ">=" "<<" ">>"
@@ -96,8 +97,11 @@
       (,type-regexp . font-lock-type-face)
       (,constant-regexp . font-lock-constant-face)
 
-      ;; Built-in output functions available in the initial runtime.
-      ("\\_<\\(print\\|println\\)\\_>" 1 font-lock-builtin-face)
+      ;; Runtime I/O primitives and std/io.snh convenience functions.
+      ;; These are ordinary callable names, but giving them a distinct face
+      ;; makes the built-in I/O surface easy to spot while editing.
+      ("\\_<\\(read\\|write\\|print\\|println\\|input\\|error\\)\\_>"
+       1 font-lock-builtin-face)
 
       ;; Function calls, including signature-based implementations.
       ;; Earlier keyword/builtin matches take precedence.

@@ -1,0 +1,10 @@
+%include "std/io.snh"
+
+func main() => int {
+    print("Name: ");
+    string name = input();
+    println(name);
+    println(42);
+    error("diagnostic\n");
+    return 0;
+}

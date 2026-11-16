@@ -101,6 +101,7 @@ struct_initializer      = "{", [ designated_initializer,
 designated_initializer  = ".", IDENTIFIER, "=", initializer ;
 
 type                    = "int" | "float" | "double" | "bool" | "string"
+                        | "any" | "stream" | "void" (* void is return-only *)
                         | IDENTIFIER ;
 ```
 
@@ -139,3 +140,24 @@ argument_list          = expression, { ",", expression } ;
 
 String escape decoding and backslash-newline string continuation are handled by
 the lexer. Both quote styles produce `STRING_LITERAL` tokens.
+
+
+## v0.12 primitive I/O additions
+
+The runtime provides immutable built-in stream identifiers `stdin`, `stdout`,
+and `stderr`, all of type `stream`. Two built-in calls are available:
+
+```ebnf
+write_call              = "write", "(", expression, ",", expression, ")" ;
+read_call               = "read", "(", expression, ")" ;
+```
+
+`write(stream, any)` returns `void`; it writes a printable primitive to
+`stdout` or `stderr` without adding a newline. `read(stream)` returns a
+nullable `string`, reading one line from `stdin` and returning `null` at EOF.
+The `any` type is a tagged, type-erased value used by generic I/O wrappers;
+it does not introduce implicit conversions to other declared types.
+
+The standard header `std/io.snh` provides the Serenity-level wrappers
+`print`, `println`, `input`, and `error`. See
+`docs/STANDARD_IO_v0.12.md` for their exact behavior.

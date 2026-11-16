@@ -1,0 +1,20 @@
+// Serenity standard I/O library.
+// The compiler provides write(stream, any) and read(stream) primitives.
+// read(stdin) returns a line without its newline, or null at end-of-file.
+
+func print(any value) => void {
+    write(stdout, value);
+}
+
+func println(any value) => void {
+    write(stdout, value);
+    write(stdout, "\n");
+}
+
+func input() => string {
+    return read(stdin);
+}
+
+func error(any value) => void {
+    write(stderr, value);
+}

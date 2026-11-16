@@ -26,6 +26,8 @@ using TypeKind = semantic::TypeKind;
     case TypeKind::String: return {ValueType::String, {}};
     case TypeKind::Struct: return {ValueType::Struct, type.name};
     case TypeKind::Enum: return {ValueType::Enum, type.name};
+    case TypeKind::Any: return {ValueType::Any, {}};
+    case TypeKind::Stream: return {ValueType::Stream, {}};
     case TypeKind::Error: return {ValueType::Invalid, {}};
     }
     return {ValueType::Invalid, {}};
@@ -449,7 +451,7 @@ private:
                     if (field.defaultValue != nullptr) {
                         const auto constant = constantExpression(*field.defaultValue);
                         if (!constant) {
-                            report("struct field default must be a compile-time constant in bytecode v0.6",
+                            report("struct field default must be a compile-time constant in bytecode v0.7",
                                    field.span);
                         } else {
                             defaultConstant = addConstant(*constant, field.span);
@@ -474,6 +476,9 @@ private:
         if (name == "double") return {ValueType::Double, {}};
         if (name == "bool") return {ValueType::Bool, {}};
         if (name == "string") return {ValueType::String, {}};
+        if (name == "any") return {ValueType::Any, {}};
+        if (name == "stream") return {ValueType::Stream, {}};
+        if (name == "void") return {ValueType::Void, {}};
         if (structIndices_.find(name) != structIndices_.end()) return {ValueType::Struct, name};
         if (enumIndices_.find(name) != enumIndices_.end()) return {ValueType::Enum, name};
         return {ValueType::Invalid, name};
@@ -568,7 +573,7 @@ private:
         for (const auto& [name, parameterTypes] : prototypeParameterTypes_) {
             (void)parameterTypes;
             if (functionIndices_.find(name) == functionIndices_.end()) {
-                report("function prototype '" + name + "' has no implementation in bytecode v0.6", {});
+                report("function prototype '" + name + "' has no implementation in bytecode v0.7", {});
             }
         }
 
@@ -662,6 +667,9 @@ TypeInfo FunctionCompiler::typeInfo(const ast::TypeRef& type, ast::SourceSpan sp
     if (type.name == "double") return {ValueType::Double, {}};
     if (type.name == "bool") return {ValueType::Bool, {}};
     if (type.name == "string") return {ValueType::String, {}};
+    if (type.name == "any") return {ValueType::Any, {}};
+    if (type.name == "stream") return {ValueType::Stream, {}};
+    if (type.name == "void") return {ValueType::Void, {}};
     if (structIndices_.find(type.name) != structIndices_.end()) return {ValueType::Struct, type.name};
     if (enumIndices_.find(type.name) != enumIndices_.end()) return {ValueType::Enum, type.name};
     report("cannot generate bytecode for unknown type '" + type.name + "'", span);
@@ -725,9 +733,12 @@ void FunctionCompiler::emitDefault(TypeInfo type, ast::SourceSpan span) {
     case ValueType::Struct:
     case ValueType::Enum:
     case ValueType::Null:
+    case ValueType::Any:
+    case ValueType::Stream:
         emitConstant(Constant{ValueType::Null, std::monostate{}}, span);
         break;
     case ValueType::Void:
+        break;
     case ValueType::Invalid:
         report("cannot materialize a default value for this type", span);
         emitConstant(Constant{ValueType::Null, std::monostate{}}, span);
@@ -1028,11 +1039,17 @@ void FunctionCompiler::compileExpression(const ast::Expression& expression) {
         emitConstant(Constant{ValueType::Null, std::monostate{}}, expression.span());
     } else if (const auto* identifier = dynamic_cast<const ast::IdentifierExpr*>(&expression)) {
         const Binding* binding = lookup(identifier->name());
-        if (binding == nullptr) {
+        if (binding != nullptr) {
+            load(*binding, expression.span());
+        } else if (identifier->name() == "stdout") {
+            (void)emit(Opcode::PushStream, ValueType::Stream, 0, 0, expression.span());
+        } else if (identifier->name() == "stdin") {
+            (void)emit(Opcode::PushStream, ValueType::Stream, 1, 0, expression.span());
+        } else if (identifier->name() == "stderr") {
+            (void)emit(Opcode::PushStream, ValueType::Stream, 2, 0, expression.span());
+        } else {
             report("unresolved identifier '" + identifier->name() + "' during bytecode generation",
                    expression.span());
-        } else {
-            load(*binding, expression.span());
         }
     } else if (const auto* unary = dynamic_cast<const ast::UnaryExpr*>(&expression)) {
         compileExpression(unary->operand());
@@ -1085,6 +1102,38 @@ void FunctionCompiler::compileExpression(const ast::Expression& expression) {
 
 void FunctionCompiler::compileCall(const ast::CallExpr& expression) {
     const std::string& callee = expression.callee();
+    if (callee == "write") {
+        if (expression.arguments().size() != 2 ||
+            expression.arguments()[0] == nullptr || expression.arguments()[1] == nullptr) {
+            report("built-in write requires exactly two arguments", expression.span());
+            return;
+        }
+        compileExpression(*expression.arguments()[0]);
+        compileExpression(*expression.arguments()[1]);
+        (void)emit(Opcode::StreamWrite, expression.span());
+        return;
+    }
+    if (callee == "read") {
+        if (expression.arguments().size() != 1 || expression.arguments()[0] == nullptr) {
+            report("built-in read requires exactly one argument", expression.span());
+            return;
+        }
+        compileExpression(*expression.arguments()[0]);
+        (void)emit(Opcode::StreamRead, expression.span());
+        return;
+    }
+
+    const auto function = functionIndices_.find(callee);
+    if (function != functionIndices_.end()) {
+        for (const ast::ExprPtr& argument : expression.arguments()) {
+            if (argument != nullptr) compileExpression(*argument);
+        }
+        (void)emit(Opcode::Call, ValueType::Invalid,
+                   static_cast<std::int32_t>(function->second),
+                   static_cast<std::int32_t>(expression.arguments().size()), expression.span());
+        return;
+    }
+
     if (callee == "print" || callee == "println") {
         if (expression.arguments().size() != 1 || expression.arguments().front() == nullptr) {
             report("built-in output call has an invalid argument list", expression.span());
@@ -1098,17 +1147,7 @@ void FunctionCompiler::compileCall(const ast::CallExpr& expression) {
         return;
     }
 
-    const auto function = functionIndices_.find(callee);
-    if (function == functionIndices_.end()) {
-        report("call to function '" + callee + "' has no bytecode implementation", expression.span());
-        return;
-    }
-    for (const ast::ExprPtr& argument : expression.arguments()) {
-        if (argument != nullptr) compileExpression(*argument);
-    }
-    (void)emit(Opcode::Call, ValueType::Invalid,
-               static_cast<std::int32_t>(function->second),
-               static_cast<std::int32_t>(expression.arguments().size()), expression.span());
+    report("call to function '" + callee + "' has no bytecode implementation", expression.span());
 }
 
 void FunctionCompiler::compileMemberAccess(const ast::MemberAccessExpr& expression) {

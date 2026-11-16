@@ -41,6 +41,9 @@ std::string_view opcodeName(Opcode opcode) noexcept {
     case Opcode::Return: return "RETURN";
     case Opcode::Print: return "PRINT";
     case Opcode::Println: return "PRINTLN";
+    case Opcode::PushStream: return "PUSH_STREAM";
+    case Opcode::StreamRead: return "STREAM_READ";
+    case Opcode::StreamWrite: return "STREAM_WRITE";
     }
     return "UNKNOWN";
 }
@@ -57,6 +60,8 @@ std::string_view valueTypeName(ValueType type) noexcept {
     case ValueType::String: return "string";
     case ValueType::Struct: return "struct";
     case ValueType::Enum: return "enum";
+    case ValueType::Any: return "any";
+    case ValueType::Stream: return "stream";
     }
     return "unknown";
 }

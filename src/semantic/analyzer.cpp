@@ -14,8 +14,8 @@ bool Type::isInteger() const noexcept {
 }
 
 bool Type::isNullable() const noexcept {
-    return kind == TypeKind::Null || kind == TypeKind::String ||
-           kind == TypeKind::Struct || kind == TypeKind::Enum;
+    return kind == TypeKind::Null || kind == TypeKind::String || kind == TypeKind::Any ||
+           kind == TypeKind::Stream || kind == TypeKind::Struct || kind == TypeKind::Enum;
 }
 
 std::string Type::toString() const {
@@ -28,6 +28,8 @@ std::string Type::toString() const {
     case TypeKind::Double: return "double";
     case TypeKind::Bool: return "bool";
     case TypeKind::String: return "string";
+    case TypeKind::Any: return "any";
+    case TypeKind::Stream: return "stream";
     case TypeKind::Struct:
     case TypeKind::Enum: return name;
     }
@@ -54,6 +56,9 @@ Type SemanticAnalyzer::primitiveType(const std::string& name) const {
     if (name == "double") return {TypeKind::Double, {}};
     if (name == "bool") return {TypeKind::Bool, {}};
     if (name == "string") return {TypeKind::String, {}};
+    if (name == "any") return {TypeKind::Any, {}};
+    if (name == "stream") return {TypeKind::Stream, {}};
+    if (name == "void") return {TypeKind::Void, {}};
     return {TypeKind::Error, {}};
 }
 
@@ -75,6 +80,8 @@ Type SemanticAnalyzer::resolveType(const ast::TypeRef& typeRef) {
 
 bool SemanticAnalyzer::canAssign(const Type& destination, const Type& source) const noexcept {
     if (destination.isError() || source.isError()) return true;
+    if (destination.kind == TypeKind::Any) return true;
+    if (source.kind == TypeKind::Any) return destination.kind == TypeKind::Any;
     if (destination == source) return true;
     return source.kind == TypeKind::Null && destination.isNullable();
 }
@@ -82,7 +89,7 @@ bool SemanticAnalyzer::canAssign(const Type& destination, const Type& source) co
 bool SemanticAnalyzer::isPrintable(const Type& type) const noexcept {
     return type.kind == TypeKind::Int || type.kind == TypeKind::Float ||
            type.kind == TypeKind::Double || type.kind == TypeKind::Bool ||
-           type.kind == TypeKind::String;
+           type.kind == TypeKind::String || type.kind == TypeKind::Any;
 }
 
 void SemanticAnalyzer::registerTypeNames() {
@@ -126,6 +133,10 @@ void SemanticAnalyzer::populateTypeMembers() {
 
             for (const ast::FieldDecl& field : structure->fields()) {
                 Type fieldType = resolveType(field.type);
+                if (fieldType.kind == TypeKind::Void) {
+                    report("struct fields cannot have type 'void'", field.span);
+                    fieldType = {TypeKind::Error, {}};
+                }
                 if (typeIt->second.fields.find(field.name) != typeIt->second.fields.end()) {
                     report("duplicate field '" + field.name + "' in struct '" + structure->name() + "'",
                            field.span);
@@ -157,6 +168,11 @@ void SemanticAnalyzer::registerFunctionSignatures() {
         const auto* function = dynamic_cast<const ast::FunctionDecl*>(declaration.get());
         if (function == nullptr) continue;
 
+        if (function->name() == "read" || function->name() == "write") {
+            report("function name '" + function->name() + "' is reserved for an I/O primitive",
+                   function->span());
+        }
+
         const Type returnType = resolveType(function->returnType());
         std::vector<Type> parameterTypes;
         parameterTypes.reserve(function->parameters().size());
@@ -187,7 +203,12 @@ void SemanticAnalyzer::registerFunctionSignatures() {
                     report("parameter type is missing", parameter.span);
                     parameterTypes.push_back({TypeKind::Error, {}});
                 } else {
-                    parameterTypes.push_back(resolveType(*parameter.type));
+                    Type parameterType = resolveType(*parameter.type);
+                    if (parameterType.kind == TypeKind::Void) {
+                        report("function parameters cannot have type 'void'", parameter.span);
+                        parameterType = {TypeKind::Error, {}};
+                    }
+                    parameterTypes.push_back(std::move(parameterType));
                 }
             }
         }
@@ -247,6 +268,12 @@ void SemanticAnalyzer::registerGlobalVariables() {
 
         const ast::VariableSpec& variable = global->variable();
         const Type type = resolveType(variable.type);
+        if (type.kind == TypeKind::Void) {
+            report("variables cannot have type 'void'", variable.span);
+        }
+        if (type.kind == TypeKind::Stream && variable.initializer == nullptr) {
+            report("stream variables must be initialized", variable.span);
+        }
         const auto [it, inserted] = globals_.emplace(
             variable.name, VariableSymbol{type, variable.isMutable, variable.span});
         (void)it;
@@ -381,6 +408,12 @@ void SemanticAnalyzer::analyzeStatement(const ast::Statement& statement) {
 
 void SemanticAnalyzer::analyzeVariableDeclaration(const ast::VariableSpec& variable) {
     const Type variableType = resolveType(variable.type);
+    if (variableType.kind == TypeKind::Void) {
+        report("variables cannot have type 'void'", variable.span);
+    }
+    if (variableType.kind == TypeKind::Stream && variable.initializer == nullptr) {
+        report("stream variables must be initialized", variable.span);
+    }
     if (scopes_.empty()) pushScope();
 
     if (scopes_.back().find(variable.name) != scopes_.back().end()) {
@@ -502,10 +535,13 @@ Type SemanticAnalyzer::analyzeExpression(
         result = {TypeKind::Null, {}};
     } else if (const auto* identifier = dynamic_cast<const ast::IdentifierExpr*>(&expression)) {
         const VariableSymbol* variable = lookupVariable(identifier->name());
-        if (variable == nullptr) {
-            report("unknown variable '" + identifier->name() + "'", expression.span());
-        } else {
+        if (variable != nullptr) {
             result = variable->type;
+        } else if (identifier->name() == "stdout" || identifier->name() == "stderr" ||
+                   identifier->name() == "stdin") {
+            result = {TypeKind::Stream, {}};
+        } else {
+            report("unknown variable '" + identifier->name() + "'", expression.span());
         }
     } else if (const auto* unary = dynamic_cast<const ast::UnaryExpr*>(&expression)) {
         const Type operand = analyzeExpression(unary->operand(), expected);
@@ -649,25 +685,63 @@ Type SemanticAnalyzer::analyzeCallExpression(
     const Type* expected) {
     (void)expected;
 
-    if (expression.callee() == "print" || expression.callee() == "println") {
-        if (expression.arguments().size() != 1) {
-            report("built-in '" + expression.callee() + "' currently accepts exactly one argument",
-                   expression.span());
+    if (expression.callee() == "write") {
+        if (expression.arguments().size() != 2) {
+            report("built-in 'write' expects a stream and a printable value", expression.span());
         }
-        for (const ast::ExprPtr& argument : expression.arguments()) {
-            if (argument == nullptr) continue;
-            const Type argumentType = analyzeExpression(*argument);
-            if (!argumentType.isError() && !isPrintable(argumentType)) {
-                report("built-in '" + expression.callee() + "' cannot print values of type '" +
-                           argumentType.toString() + "'",
-                       argument->span());
+        if (!expression.arguments().empty() && expression.arguments()[0] != nullptr) {
+            const Type streamType = analyzeExpression(*expression.arguments()[0]);
+            if (!streamType.isError() && streamType.kind != TypeKind::Stream) {
+                report("first argument to 'write' must be a stream", expression.arguments()[0]->span());
             }
+        }
+        if (expression.arguments().size() >= 2 && expression.arguments()[1] != nullptr) {
+            const Type valueType = analyzeExpression(*expression.arguments()[1]);
+            if (!valueType.isError() && !isPrintable(valueType)) {
+                report("second argument to 'write' must be a primitive printable value",
+                       expression.arguments()[1]->span());
+            }
+        }
+        for (std::size_t index = 2; index < expression.arguments().size(); ++index) {
+            if (expression.arguments()[index] != nullptr) (void)analyzeExpression(*expression.arguments()[index]);
         }
         return {TypeKind::Void, {}};
     }
 
+    if (expression.callee() == "read") {
+        if (expression.arguments().size() != 1) {
+            report("built-in 'read' expects exactly one stream argument", expression.span());
+        }
+        for (std::size_t index = 0; index < expression.arguments().size(); ++index) {
+            if (expression.arguments()[index] == nullptr) continue;
+            const Type streamType = analyzeExpression(*expression.arguments()[index]);
+            if (!streamType.isError() && streamType.kind != TypeKind::Stream) {
+                report("argument to 'read' must be a stream", expression.arguments()[index]->span());
+            }
+        }
+        return {TypeKind::String, {}};
+    }
+
     const auto function = functions_.find(expression.callee());
     if (function == functions_.end()) {
+        // Keep the original output intrinsics available for source files that
+        // have not included std/io.snh yet. The standard-library definitions
+        // take precedence whenever they are present in the program.
+        if (expression.callee() == "print" || expression.callee() == "println") {
+            if (expression.arguments().size() != 1) {
+                report("built-in '" + expression.callee() + "' currently accepts exactly one argument",
+                       expression.span());
+            }
+            for (const ast::ExprPtr& argument : expression.arguments()) {
+                if (argument == nullptr) continue;
+                const Type argumentType = analyzeExpression(*argument);
+                if (!argumentType.isError() && !isPrintable(argumentType)) {
+                    report("built-in '" + expression.callee() + "' cannot print values of type '" +
+                               argumentType.toString() + "'", argument->span());
+                }
+            }
+            return {TypeKind::Void, {}};
+        }
         report("unknown function '" + expression.callee() + "'", expression.span());
         for (const ast::ExprPtr& argument : expression.arguments()) {
             if (argument != nullptr) (void)analyzeExpression(*argument);

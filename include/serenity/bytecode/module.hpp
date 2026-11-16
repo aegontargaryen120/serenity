@@ -75,7 +75,7 @@ struct Function {
 
 struct BytecodeModule {
     std::uint16_t versionMajor {0};
-    std::uint16_t versionMinor {6};
+    std::uint16_t versionMinor {7};
     std::vector<Constant> constants;
     std::vector<GlobalSlot> globals;
     std::vector<StructDescriptor> structs;

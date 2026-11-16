@@ -1,4 +1,4 @@
-# Serenity Bytecode v0.6
+# Serenity Bytecode v0.7
 
 ## Purpose
 
@@ -7,7 +7,7 @@ The bytecode layer is the shared execution representation for `sninterp` and
 consume the same bytecode or a later lower-level IR, but LLVM is not linked by
 this milestone.
 
-The v0.6 deliverable provides:
+The v0.7 deliverable provides:
 
 - a fixed-width instruction structure;
 - typed constants and nominal type descriptors;
@@ -112,7 +112,7 @@ a value initialized from those field defaults, falling back to the type default
 for omitted defaults. Designated initializers then overwrite the supplied fields
 using `DUP` and `SET_FIELD`.
 
-In v0.6, struct field defaults must be compile-time constant expressions. The
+In v0.7, struct field defaults must be compile-time constant expressions. The
 constant evaluator handles primitive literals, supported unary operations, and
 basic constant binary operations. A default that requires a function call or a
 runtime variable is diagnosed by the bytecode generator.
@@ -139,9 +139,18 @@ original `.sn` or `.snh` file for runtime diagnostics and debugging.
 - No tracing profiler/JIT yet; that is the later `snjit` milestone.
 - No `.sbc` binary serialization or loader yet.
 - No verifier for externally loaded/untrusted bytecode yet.
-- Function prototypes without definitions are rejected because v0.6 has no
+- Function prototypes without definitions are rejected because v0.7 has no
   external linking contract.
 - `for`, arrays, and indexing are not part of the current parser/AST.
 - A function without an explicit return on every path receives a generated
   type-default fallback return. Definite-return analysis is still future work.
 - Struct field defaults that are not compile-time constants are unsupported.
+
+
+## v0.7 additions
+
+Bytecode v0.7 adds type-erased `any` values, stream handles, and the
+`PUSH_STREAM`, `STREAM_READ`, and `STREAM_WRITE` instructions used by the
+standard I/O primitives. `STREAM_READ` consumes a stream handle and produces
+a nullable string. `STREAM_WRITE` consumes a stream handle and a printable
+value. The existing bytecode instruction record remains 12 bytes wide.

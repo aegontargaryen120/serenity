@@ -20,6 +20,8 @@ enum class ValueType : std::uint8_t {
     String,
     Struct,
     Enum,
+    Any,
+    Stream,
 };
 
 enum class Opcode : std::uint8_t {
@@ -62,6 +64,9 @@ enum class Opcode : std::uint8_t {
     Return,
     Print,
     Println,
+    PushStream,
+    StreamRead,
+    StreamWrite,
 };
 
 // Fixed-width logical instruction layout: 12 bytes. `type` carries the value

@@ -135,8 +135,8 @@ func main() => int {
     require(generated.ok(), "semantically valid program should generate bytecode");
 
     const BytecodeModule& module = *generated.module;
-    require(module.versionMajor == 0 && module.versionMinor == 6,
-            "module should carry bytecode version 0.6");
+    require(module.versionMajor == 0 && module.versionMinor == 7,
+            "module should carry bytecode version 0.7");
     require(module.globals.size() == 2, "global variables should be represented in the module");
     require(module.structs.size() == 2,
             "all struct layouts should be represented in the module");

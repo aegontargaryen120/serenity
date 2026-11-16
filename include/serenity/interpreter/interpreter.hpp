@@ -16,6 +16,17 @@ namespace serenity::interpreter {
 
 struct StructInstance;
 
+enum class StreamKind : std::uint8_t {
+    Stdout = 0,
+    Stdin = 1,
+    Stderr = 2,
+};
+
+struct StreamHandle {
+    StreamKind kind {StreamKind::Stdout};
+    friend bool operator==(const StreamHandle&, const StreamHandle&) = default;
+};
+
 struct EnumValue {
     std::uint32_t enumIndex {0};
     std::uint32_t memberIndex {0};
@@ -34,6 +45,7 @@ struct Value {
         double,
         bool,
         std::string,
+        StreamHandle,
         EnumValue,
         std::shared_ptr<StructInstance>>;
 
@@ -120,6 +132,12 @@ public:
         const bytecode::BytecodeModule& module,
         std::ostream& output,
         InterpreterOptions options = {});
+    Interpreter(
+        const bytecode::BytecodeModule& module,
+        std::istream& input,
+        std::ostream& output,
+        std::ostream& error,
+        InterpreterOptions options = {});
 
     // Runs the synthetic global initializer (when present), then the module's
     // recorded entry function. A module without an entry function is rejected.
@@ -134,7 +152,9 @@ private:
     };
 
     const bytecode::BytecodeModule& module_;
+    std::istream& input_;
     std::ostream& output_;
+    std::ostream& errorOutput_;
     InterpreterOptions options_;
 
     std::vector<Value> operandStack_;

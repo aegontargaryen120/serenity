@@ -43,6 +43,7 @@ struct Effect {
         return {};
     case Opcode::PushConstant:
     case Opcode::PushEnum:
+    case Opcode::PushStream:
     case Opcode::LoadLocal:
     case Opcode::LoadGlobal:
     case Opcode::NewStruct:
@@ -54,6 +55,10 @@ struct Effect {
     case Opcode::Println:
     case Opcode::JumpIfFalse:
         return {1, -1};
+    case Opcode::StreamRead:
+        return {1, 0};
+    case Opcode::StreamWrite:
+        return {2, -2};
     case Opcode::Duplicate:
         return {1, 1};
     case Opcode::GetField:
@@ -316,6 +321,8 @@ private:
              << "declare void @sn_rt_unary(ptr, i32, i32, ptr)\n"
              << "declare void @sn_rt_binary(ptr, i32, i32, ptr, ptr)\n"
              << "declare void @sn_rt_print(ptr, i1)\n"
+             << "declare void @sn_rt_read(ptr, ptr)\n"
+             << "declare void @sn_rt_write(ptr, ptr)\n"
              << "declare ptr @sn_rt_struct_new(i32)\n"
              << "declare void @sn_rt_struct_default(ptr, i32, i64)\n"
              << "declare void @sn_rt_struct_set_value(ptr, i32, i64, i64)\n"
@@ -421,6 +428,14 @@ private:
             }
             const auto index = static_cast<std::uint32_t>(instruction.operand);
             emitConstantTo(module_.constants[index], dst, index);
+            next(); return;
+        }
+        case Opcode::PushStream: {
+            if (instruction.operand < 0 || instruction.operand > 2) {
+                errors_.push_back({"PUSH_STREAM has an invalid stream handle", {}}); return;
+            }
+            out_ << "  call void @sn_rt_make(ptr " << dst << ", i64 "
+                 << valueTypeNumber(ValueType::Stream) << ", i64 " << instruction.operand << ")\n";
             next(); return;
         }
         case Opcode::PushEnum: {
@@ -591,6 +606,14 @@ private:
             }
             out_ << "  ret void\n\n";
             return;
+        case Opcode::StreamRead:
+            out_ << "  call void @sn_rt_read(ptr " << stackAt(depth - 1)
+                 << ", ptr " << stackAt(depth - 1) << ")\n";
+            next(); return;
+        case Opcode::StreamWrite:
+            out_ << "  call void @sn_rt_write(ptr " << stackAt(depth - 2)
+                 << ", ptr " << stackAt(depth - 1) << ")\n";
+            next(); return;
         case Opcode::Print:
         case Opcode::Println:
             out_ << "  call void @sn_rt_print(ptr " << stackAt(depth - 1) << ", i1 "

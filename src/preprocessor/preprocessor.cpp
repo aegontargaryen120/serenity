@@ -14,19 +14,55 @@ namespace {
 #define SERENITY_STDLIB_DIRECTORY ""
 #endif
 
-[[nodiscard]] std::filesystem::path configuredStandardLibraryDirectory(
-    const PreprocessorOptions& options) {
-    if (!options.standardLibraryDirectory.empty()) {
-        return options.standardLibraryDirectory;
+[[nodiscard]] std::filesystem::path expandHomeDirectory(const std::filesystem::path& path) {
+    const std::string value = path.string();
+    if (value != "~" && !value.starts_with("~/")) {
+        return path;
     }
 
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || home[0] == '\0') {
+        return path;
+    }
+
+    if (value == "~") {
+        return std::filesystem::path(home);
+    }
+    return std::filesystem::path(home) / value.substr(2);
+}
+
+[[nodiscard]] std::vector<std::filesystem::path> configuredStandardLibraryDirectories(
+    const PreprocessorOptions& options) {
+    // An explicitly supplied option is authoritative. Otherwise, search the
+    // environment override first and retain the CMake-configured project path
+    // as a fallback. A stale environment variable must not hide a valid build
+    // default (a particularly confusing failure when running through CTest).
+    if (!options.standardLibraryDirectory.empty()) {
+        return {expandHomeDirectory(options.standardLibraryDirectory)};
+    }
+
+    std::vector<std::filesystem::path> directories;
     if (const char* environmentPath = std::getenv("SERENITY_STDLIB_PATH");
         environmentPath != nullptr && environmentPath[0] != '\0') {
-        return std::filesystem::path(environmentPath);
+        directories.emplace_back(expandHomeDirectory(environmentPath));
     }
 
     const std::filesystem::path buildDefault {SERENITY_STDLIB_DIRECTORY};
-    return buildDefault;
+    if (!buildDefault.empty()) {
+        directories.push_back(buildDefault);
+    }
+
+    // Avoid probing the same directory twice when the environment override
+    // already points at the project's configured standard-library directory.
+    std::vector<std::filesystem::path> uniqueDirectories;
+    for (const auto& directory : directories) {
+        const auto normalized = directory.lexically_normal();
+        if (std::find(uniqueDirectories.begin(), uniqueDirectories.end(), normalized)
+            == uniqueDirectories.end()) {
+            uniqueDirectories.push_back(normalized);
+        }
+    }
+    return uniqueDirectories;
 }
 
 [[nodiscard]] bool isHorizontalWhitespace(char c) noexcept {
@@ -398,29 +434,46 @@ std::optional<std::filesystem::path> Preprocessor::resolveInclude(
     std::error_code error;
     bool exists = std::filesystem::exists(resolved, error) && !error;
 
-    // Quoted project-relative headers take precedence. The standard-library
-    // fallback is used only when a relative include cannot be found beside
-    // the including file. Absolute paths are never redirected.
+    // Quoted project-relative headers take precedence. If no sibling header
+    // exists, try each configured standard-library root in priority order:
+    // explicit option, SERENITY_STDLIB_PATH, then the CMake build default.
+    // Absolute paths are never redirected.
+    std::vector<std::filesystem::path> standardRoots;
     if (!exists && !requested.is_absolute()) {
-        const std::filesystem::path standardRoot =
-            configuredStandardLibraryDirectory(options_);
-        if (!standardRoot.empty()) {
+        standardRoots = configuredStandardLibraryDirectories(options_);
+        for (const auto& standardRoot : standardRoots) {
+            if (standardRoot.empty()) {
+                continue;
+            }
+
             const std::filesystem::path standardCandidate =
                 normalizedPath(standardRoot / requested);
             error.clear();
-            if (std::filesystem::exists(standardCandidate, error) && !error) {
+            if (std::filesystem::is_regular_file(standardCandidate, error) && !error) {
                 resolved = standardCandidate;
                 exists = true;
+                break;
             }
         }
     }
 
     if (!exists) {
+        std::string message =
+            "included header '" + pathForMessage(requested) +
+            "' was not found relative to '" + pathForMessage(baseDirectory) + "'";
+        if (!requested.is_absolute()) {
+            if (standardRoots.empty()) {
+                message += "; no Serenity standard-library directory is configured";
+            } else {
+                message += "; searched Serenity standard-library roots:";
+                for (const auto& root : standardRoots) {
+                    message += " '" + pathForMessage(root) + "'";
+                }
+            }
+        }
         addDiagnostic(
             PreprocessSeverity::Error,
-            "included header '" + pathForMessage(requested) +
-                "' was not found relative to '" + pathForMessage(baseDirectory) +
-                "' or in the Serenity standard library",
+            std::move(message),
             directiveOrigin.file,
             directiveOrigin.location);
         return std::nullopt;

@@ -10,13 +10,15 @@ namespace serenity::semantic {
 
 enum class TypeKind {
     Error,
-    Void, // Internal-only result type used by built-in procedures such as print().
+    Void, // Function result type; void values cannot be stored or passed.
     Null,
     Int,
     Float,
     Double,
     Bool,
     String,
+    Any,
+    Stream,
     Struct,
     Enum,
 };

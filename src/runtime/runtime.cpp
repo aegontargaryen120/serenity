@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <istream>
 #include <limits>
 #include <memory>
 #include <new>
@@ -26,6 +27,11 @@ struct RuntimeStruct {
 std::vector<std::unique_ptr<RuntimeStruct>>& allocations() {
     static std::vector<std::unique_ptr<RuntimeStruct>> objects;
     return objects;
+}
+
+std::vector<std::unique_ptr<std::string>>& stringAllocations() {
+    static std::vector<std::unique_ptr<std::string>> strings;
+    return strings;
 }
 
 [[noreturn]] void runtimeFailure(const char* message) {
@@ -86,6 +92,9 @@ std::vector<std::unique_ptr<RuntimeStruct>>& allocations() {
         if (left.payload == 0 || right.payload == 0) return left.payload == right.payload;
         return std::strcmp(asString(left), asString(right)) == 0;
     case ValueType::Struct:
+    case ValueType::Stream:
+        return left.payload == right.payload;
+    case ValueType::Any:
         return left.payload == right.payload;
     case ValueType::Null:
         return true;
@@ -166,6 +175,8 @@ extern "C" void sn_rt_default(SnValue* out, std::uint64_t tag) {
     case ValueType::String:
     case ValueType::Struct:
     case ValueType::Enum:
+    case ValueType::Any:
+    case ValueType::Stream:
     case ValueType::Null:
         *out = SnValue{static_cast<std::uint64_t>(ValueType::Null), 0};
         return;
@@ -333,28 +344,55 @@ extern "C" void sn_rt_binary(SnValue* out, std::int32_t opcodeValue,
     runtimeFailure("unsupported binary operation in AOT runtime");
 }
 
-extern "C" void sn_rt_print(const SnValue* value, bool newline) {
-    if (value == nullptr) runtimeFailure("invalid PRINT value slot");
-    switch (static_cast<ValueType>(value->tag)) {
-    case ValueType::Int:
-        std::cout << static_cast<std::int64_t>(value->payload);
-        break;
-    case ValueType::Float:
-        std::cout << std::bit_cast<float>(static_cast<std::uint32_t>(value->payload));
-        break;
-    case ValueType::Double:
-        std::cout << std::bit_cast<double>(value->payload);
-        break;
-    case ValueType::Bool:
-        std::cout << (value->payload != 0 ? "true" : "false");
-        break;
-    case ValueType::String:
-        if (value->payload == 0) runtimeFailure("attempted to print null");
-        std::cout << reinterpret_cast<const char*>(static_cast<std::uintptr_t>(value->payload));
-        break;
-    default:
-        runtimeFailure("PRINT received a value that is not a printable primitive");
+extern "C" void sn_rt_write(const SnValue* streamValue, const SnValue* value) {
+    if (streamValue == nullptr || value == nullptr) runtimeFailure("invalid write() argument slot");
+    const SnValue stream = *streamValue;
+    const SnValue item = *value;
+    if (stream.tag != static_cast<std::uint64_t>(ValueType::Stream)) {
+        runtimeFailure("write() requires a stream handle");
     }
+    std::ostream* destination = nullptr;
+    if (stream.payload == 0) destination = &std::cout;
+    else if (stream.payload == 2) destination = &std::cerr;
+    else if (stream.payload == 1) runtimeFailure("cannot write to stdin");
+    else runtimeFailure("write() received an invalid stream handle");
+
+    switch (static_cast<ValueType>(item.tag)) {
+    case ValueType::Int: *destination << asInt(item); break;
+    case ValueType::Float: *destination << asFloat(item); break;
+    case ValueType::Double: *destination << asDouble(item); break;
+    case ValueType::Bool: *destination << (asBool(item) ? "true" : "false"); break;
+    case ValueType::String: *destination << asString(item); break;
+    default: runtimeFailure("write() received null or a non-printable value");
+    }
+}
+
+extern "C" void sn_rt_read(const SnValue* streamValue, SnValue* out) {
+    if (streamValue == nullptr || out == nullptr) runtimeFailure("invalid read() argument slot");
+    const SnValue stream = *streamValue;
+    if (stream.tag != static_cast<std::uint64_t>(ValueType::Stream) || stream.payload != 1) {
+        runtimeFailure("read() requires stdin");
+    }
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+        *out = SnValue{static_cast<std::uint64_t>(ValueType::Null), 0};
+        return;
+    }
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    try {
+        auto owned = std::make_unique<std::string>(std::move(line));
+        const auto payload = static_cast<std::uint64_t>(
+            reinterpret_cast<std::uintptr_t>(owned->c_str()));
+        stringAllocations().push_back(std::move(owned));
+        *out = SnValue{static_cast<std::uint64_t>(ValueType::String), payload};
+    } catch (const std::bad_alloc&) {
+        runtimeFailure("out of memory storing input string");
+    }
+}
+
+extern "C" void sn_rt_print(const SnValue* value, bool newline) {
+    const SnValue stdoutHandle{static_cast<std::uint64_t>(ValueType::Stream), 0};
+    sn_rt_write(&stdoutHandle, value);
     if (newline) std::cout << '\n';
 }
 

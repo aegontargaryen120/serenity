@@ -8,7 +8,7 @@ if(EXISTS "/opt/homebrew/opt/llvm/bin/clang" AND
     set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
 endif()
 
-project(serenity VERSION 0.11.0 LANGUAGES C CXX)
+project(serenity VERSION 0.12.0 LANGUAGES C CXX)
 
 option(SERENITY_REQUIRE_LLVM
     "Fail configuration unless LLVM development libraries for AOT/JIT are available"
@@ -213,6 +213,13 @@ target_compile_definitions(serenity_stdlib_tests PRIVATE
     SERENITY_STDLIB_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/examples/stdlib_demo.sn"
 )
 
+add_executable(serenity_io_tests tests/test_io.cpp)
+target_link_libraries(serenity_io_tests PRIVATE
+    serenity_preprocessor serenity_lexer serenity_parser serenity_semantic
+    serenity_bytecode serenity_interpreter)
+target_compile_definitions(serenity_io_tests PRIVATE
+    SERENITY_IO_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/examples/io_demo.sn")
+
 add_executable(serenity_aot_tests tests/test_aot.cpp)
 target_link_libraries(serenity_aot_tests PRIVATE serenity_aot)
 
@@ -229,7 +236,7 @@ target_link_libraries(serenity_jit_tests PRIVATE serenity_jit)
 
 foreach(target serenity_ast_tests serenity_parser_tests serenity_semantic_tests
                serenity_bytecode_tests serenity_interpreter_tests serenity_stdlib_tests
-               serenity_aot_tests serenity_jit_tests)
+               serenity_io_tests serenity_aot_tests serenity_jit_tests)
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -245,6 +252,7 @@ add_test(NAME serenity_semantic_tests COMMAND serenity_semantic_tests)
 add_test(NAME serenity_bytecode_tests COMMAND serenity_bytecode_tests)
 add_test(NAME serenity_interpreter_tests COMMAND serenity_interpreter_tests)
 add_test(NAME serenity_stdlib_tests COMMAND serenity_stdlib_tests)
+add_test(NAME serenity_io_tests COMMAND serenity_io_tests)
 add_test(NAME serenity_aot_tests COMMAND serenity_aot_tests)
 add_test(NAME serenity_jit_tests COMMAND serenity_jit_tests)
 if(LLVM_FOUND)

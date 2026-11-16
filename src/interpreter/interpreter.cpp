@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <istream>
+#include <iostream>
 #include <ostream>
 #include <sstream>
 #include <type_traits>
@@ -16,8 +18,8 @@ using bytecode::TypeInfo;
 using bytecode::ValueType;
 
 [[nodiscard]] bool isNullable(ValueType type) noexcept {
-    return type == ValueType::Null || type == ValueType::String ||
-           type == ValueType::Struct || type == ValueType::Enum;
+    return type == ValueType::Null || type == ValueType::String || type == ValueType::Any ||
+           type == ValueType::Stream || type == ValueType::Struct || type == ValueType::Enum;
 }
 
 [[nodiscard]] const char* typeLabel(ValueType type) noexcept {
@@ -80,7 +82,12 @@ using bytecode::ValueType;
 
 Interpreter::Interpreter(
     const bytecode::BytecodeModule& module, std::ostream& output, InterpreterOptions options)
-    : module_(module), output_(output), options_(options) {}
+    : Interpreter(module, std::cin, output, std::cerr, options) {}
+
+Interpreter::Interpreter(
+    const bytecode::BytecodeModule& module, std::istream& input, std::ostream& output,
+    std::ostream& error, InterpreterOptions options)
+    : module_(module), input_(input), output_(output), errorOutput_(error), options_(options) {}
 
 ExecutionResult Interpreter::run() {
     reset();
@@ -298,6 +305,8 @@ Value Interpreter::defaultValue(const TypeInfo& type) const {
     case ValueType::String:
     case ValueType::Struct:
     case ValueType::Enum:
+    case ValueType::Any:
+    case ValueType::Stream:
     case ValueType::Void:
     case ValueType::Invalid:
         return Value{};
@@ -326,6 +335,8 @@ bool Interpreter::valueMatchesType(const Value& value, const TypeInfo& type) con
     case ValueType::Double: return std::holds_alternative<double>(value.data);
     case ValueType::Bool: return std::holds_alternative<bool>(value.data);
     case ValueType::String: return std::holds_alternative<std::string>(value.data);
+    case ValueType::Any: return true;
+    case ValueType::Stream: return std::holds_alternative<StreamHandle>(value.data);
     case ValueType::Enum: {
         const auto* enumeration = std::get_if<EnumValue>(&value.data);
         if (enumeration == nullptr || enumeration->enumIndex >= module_.enums.size()) return false;
@@ -359,6 +370,15 @@ bool Interpreter::executeInstruction(
             return false;
         }
         push(constantValue(module_.constants[static_cast<std::size_t>(instruction.operand)]));
+        return true;
+    }
+
+    case Opcode::PushStream: {
+        if (instruction.operand < 0 || instruction.operand > 2) {
+            fail("PUSH_STREAM has an invalid stream handle", functionIndex, instructionIndex);
+            return false;
+        }
+        push(Value{StreamHandle{static_cast<StreamKind>(instruction.operand)}});
         return true;
     }
 
@@ -531,6 +551,53 @@ bool Interpreter::executeInstruction(
 
     case Opcode::Return:
         return executeReturn(instruction, functionIndex, instructionIndex);
+
+    case Opcode::StreamRead: {
+        Value streamValue;
+        if (!pop(streamValue, functionIndex, instructionIndex)) return false;
+        const auto* stream = std::get_if<StreamHandle>(&streamValue.data);
+        if (stream == nullptr || stream->kind != StreamKind::Stdin) {
+            fail("read() requires stdin", functionIndex, instructionIndex);
+            return false;
+        }
+        std::string line;
+        if (!std::getline(input_, line)) {
+            push(Value{}); // null marks end-of-file
+        } else {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            push(Value{std::move(line)});
+        }
+        return true;
+    }
+
+    case Opcode::StreamWrite: {
+        Value value;
+        Value streamValue;
+        if (!pop(value, functionIndex, instructionIndex) ||
+            !pop(streamValue, functionIndex, instructionIndex)) return false;
+        const auto* stream = std::get_if<StreamHandle>(&streamValue.data);
+        if (stream == nullptr) {
+            fail("write() requires a stream handle as its first argument", functionIndex, instructionIndex);
+            return false;
+        }
+        std::ostream* destination = nullptr;
+        if (stream->kind == StreamKind::Stdout) destination = &output_;
+        else if (stream->kind == StreamKind::Stderr) destination = &errorOutput_;
+        else {
+            fail("cannot write to stdin", functionIndex, instructionIndex);
+            return false;
+        }
+        if (const auto* integer = std::get_if<std::int64_t>(&value.data)) *destination << *integer;
+        else if (const auto* floatValue = std::get_if<float>(&value.data)) *destination << *floatValue;
+        else if (const auto* doubleValue = std::get_if<double>(&value.data)) *destination << *doubleValue;
+        else if (const auto* boolean = std::get_if<bool>(&value.data)) *destination << (*boolean ? "true" : "false");
+        else if (const auto* string = std::get_if<std::string>(&value.data)) *destination << *string;
+        else {
+            fail("write() received null or a non-printable value", functionIndex, instructionIndex);
+            return false;
+        }
+        return true;
+    }
 
     case Opcode::Print:
     case Opcode::Println: {
@@ -712,6 +779,10 @@ bool Interpreter::executeComparison(
         } else if (const auto* stringLeft = std::get_if<std::string>(&left.data)) {
             if (const auto* stringRight = std::get_if<std::string>(&right.data)) {
                 comparable = true; result = *stringLeft == *stringRight;
+            }
+        } else if (const auto* streamLeft = std::get_if<StreamHandle>(&left.data)) {
+            if (const auto* streamRight = std::get_if<StreamHandle>(&right.data)) {
+                comparable = true; result = *streamLeft == *streamRight;
             }
         } else if (const auto* enumLeft = std::get_if<EnumValue>(&left.data)) {
             if (const auto* enumRight = std::get_if<EnumValue>(&right.data)) {

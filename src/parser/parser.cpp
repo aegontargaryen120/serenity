@@ -685,6 +685,9 @@ bool Parser::isTypeStart(const Token& token) const noexcept {
     case TokenType::KwDouble:
     case TokenType::KwBool:
     case TokenType::KwString:
+    case TokenType::KwAny:
+    case TokenType::KwStream:
+    case TokenType::KwVoid:
         return true;
     default:
         return false;

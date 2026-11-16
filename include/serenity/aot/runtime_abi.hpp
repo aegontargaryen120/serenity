@@ -25,6 +25,9 @@ void sn_rt_binary(serenity::aot::runtime::SnValue* out, std::int32_t opcode,
                   std::int32_t type, const serenity::aot::runtime::SnValue* left,
                   const serenity::aot::runtime::SnValue* right);
 void sn_rt_print(const serenity::aot::runtime::SnValue* value, bool newline);
+void sn_rt_read(const serenity::aot::runtime::SnValue* stream, serenity::aot::runtime::SnValue* out);
+void sn_rt_write(const serenity::aot::runtime::SnValue* stream,
+                 const serenity::aot::runtime::SnValue* value);
 void* sn_rt_struct_new(std::int32_t field_count);
 void sn_rt_struct_default(void* object, std::int32_t field_index, std::uint64_t type_tag);
 void sn_rt_struct_set_value(void* object, std::int32_t field_index,
