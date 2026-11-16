@@ -47,21 +47,22 @@ int reportPreprocessDiagnostics(const serenity::PreprocessResult& result) {
 }
 
 int usage(const char* executable) {
-    std::cerr << "Usage: " << executable << " <source.sn>\n";
+    std::cerr << "Usage: " << executable << " <source.sn> [--stats]\n";
     return 2;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
+    if (argc >= 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
         std::cout << "Serenity bytecode interpreter\n"
-                  << "Usage: sninterp <source.sn>\n";
+                  << "Usage: sninterp <source.sn> [--stats]\n";
         return 0;
     }
-    if (argc != 2) return usage(argv[0]);
-
+    if (argc < 2 || argc > 3) return usage(argv[0]);
     const std::filesystem::path sourcePath = argv[1];
+    const bool showStatistics = argc == 3 && std::string(argv[2]) == "--stats";
+    if (argc == 3 && !showStatistics) return usage(argv[0]);
     serenity::Preprocessor preprocessor;
     serenity::PreprocessResult preprocessed = preprocessor.preprocessFile(sourcePath);
     if (reportPreprocessDiagnostics(preprocessed) != 0 || !preprocessed.ok()) return 1;
@@ -122,7 +123,22 @@ int main(int argc, char** argv) {
         } else {
             std::cerr << "runtime error: execution failed\n";
         }
+        if (showStatistics) {
+            std::cerr << "Serenity interpreter statistics\n"
+                      << "Executed bytecode instructions: " << execution.stats.executedInstructions << '\n'
+                      << "Function calls:                 " << execution.stats.functionCalls << '\n'
+                      << "Peak operand stack:             " << execution.stats.peakOperandStack << '\n'
+                      << "Peak call depth:                " << execution.stats.peakCallDepth << '\n';
+        }
         return 1;
+    }
+
+    if (showStatistics) {
+        std::cerr << "Serenity interpreter statistics\n"
+                  << "Executed bytecode instructions: " << execution.stats.executedInstructions << '\n'
+                  << "Function calls:                 " << execution.stats.functionCalls << '\n'
+                  << "Peak operand stack:             " << execution.stats.peakOperandStack << '\n'
+                  << "Peak call depth:                " << execution.stats.peakCallDepth << '\n';
     }
 
     if (execution.returnValue.has_value()) {

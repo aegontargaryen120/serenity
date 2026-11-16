@@ -194,10 +194,59 @@ bool Interpreter::executeLoop(std::size_t stopDepth) {
             return false;
         }
 
+        // A compiled trace starts at a loop header and may execute many
+        // bytecode operations before returning to the interpreter at a side
+        // exit. The trace runner is optional; sninterp uses the same code path
+        // with hooks == nullptr.
+        if (options_.hooks != nullptr) {
+            std::uint64_t traceInstructions = 0;
+            const std::uint64_t budget = options_.maxInstructions == 0
+                ? std::numeric_limits<std::uint64_t>::max()
+                : options_.maxInstructions - stats_.executedInstructions;
+            std::size_t nextInstruction = frame.instructionPointer;
+            if (options_.hooks->tryExecuteTrace(
+                    frame.functionIndex, frame.instructionPointer, function,
+                    frame.locals, globals_, operandStack_, frame.stackBase,
+                    nextInstruction, budget, traceInstructions)) {
+                stats_.executedInstructions += traceInstructions;
+                frame.instructionPointer = nextInstruction;
+                if (operandStack_.size() > stats_.peakOperandStack) {
+                    stats_.peakOperandStack = operandStack_.size();
+                }
+                continue;
+            }
+        }
+
+        const std::uint32_t activeFunctionIndex = frame.functionIndex;
+        const std::size_t activeStackBase = frame.stackBase;
+        const std::size_t activeFrameDepth = frames_.size();
         const std::size_t instructionIndex = frame.instructionPointer++;
         const bytecode::Instruction instruction = function.code[instructionIndex];
+        std::optional<bool> branchCondition;
+        if (instruction.opcode == Opcode::JumpIfFalse && !operandStack_.empty()) {
+            if (const auto* condition = std::get_if<bool>(&operandStack_.back().data)) {
+                branchCondition = *condition;
+            }
+        }
+
         ++stats_.executedInstructions;
         if (!executeInstruction(instruction, frame.functionIndex, instructionIndex)) return false;
+
+        if (options_.hooks != nullptr) {
+            std::size_t nextInstruction = std::numeric_limits<std::size_t>::max();
+            std::size_t relativeDepth = std::numeric_limits<std::size_t>::max();
+            if (frames_.size() == activeFrameDepth && !frames_.empty() &&
+                frames_.back().functionIndex == activeFunctionIndex) {
+                nextInstruction = frames_.back().instructionPointer;
+                if (operandStack_.size() >= activeStackBase) {
+                    relativeDepth = operandStack_.size() - activeStackBase;
+                }
+            }
+            options_.hooks->onInstructionExecuted(
+                activeFunctionIndex, instructionIndex, instruction,
+                branchCondition, nextInstruction, relativeDepth);
+        }
+
         if (operandStack_.size() > stats_.peakOperandStack) {
             stats_.peakOperandStack = operandStack_.size();
         }

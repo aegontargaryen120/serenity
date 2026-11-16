@@ -8,7 +8,18 @@ if(EXISTS "/opt/homebrew/opt/llvm/bin/clang" AND
     set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
 endif()
 
-project(serenity VERSION 0.8.0 LANGUAGES C CXX)
+project(serenity VERSION 0.9.2 LANGUAGES C CXX)
+
+option(SERENITY_REQUIRE_LLVM
+    "Fail configuration unless LLVM ORC development libraries are available"
+    OFF
+)
+
+# Homebrew LLVM installs its CMake package beneath this prefix.
+if(EXISTS "/opt/homebrew/opt/llvm/lib/cmake/llvm")
+    list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/llvm")
+endif()
+find_package(LLVM CONFIG QUIET)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,6 +77,36 @@ target_link_libraries(serenity_aot PUBLIC serenity_bytecode)
 add_executable(sninterp src/main/sninterp.cpp)
 target_link_libraries(sninterp PRIVATE serenity_interpreter serenity_preprocessor)
 
+add_library(serenity_jit src/jit/jit.cpp)
+target_include_directories(serenity_jit PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(serenity_jit PUBLIC serenity_interpreter)
+if(LLVM_FOUND)
+    message(STATUS "Serenity tracing JIT: LLVM ${LLVM_PACKAGE_VERSION} found at ${LLVM_DIR}")
+    target_include_directories(serenity_jit SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_compile_definitions(serenity_jit PRIVATE SERENITY_HAS_LLVM=1)
+    separate_arguments(SERENITY_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+    target_compile_options(serenity_jit PRIVATE ${SERENITY_LLVM_DEFINITIONS})
+    if(TARGET LLVM)
+        target_link_libraries(serenity_jit PRIVATE LLVM)
+    else()
+        llvm_map_components_to_libnames(SERENITY_LLVM_LIBS
+            Core Support OrcJIT ExecutionEngine RuntimeDyld Object native nativecodegen
+            IRReader AsmParser)
+        target_link_libraries(serenity_jit PRIVATE ${SERENITY_LLVM_LIBS})
+    endif()
+elseif(SERENITY_REQUIRE_LLVM)
+    message(FATAL_ERROR
+        "LLVM development package not found. Set LLVM_DIR to the directory "
+        "containing LLVMConfig.cmake (Homebrew: /opt/homebrew/opt/llvm/lib/cmake/llvm)."
+    )
+else()
+    message(WARNING "LLVM development package not found: snjit will be built as an unavailable stub. Set LLVM_DIR to the directory containing LLVMConfig.cmake or enable SERENITY_REQUIRE_LLVM to make this an error.")
+    target_compile_definitions(serenity_jit PRIVATE SERENITY_HAS_LLVM=0)
+endif()
+
+add_executable(snjit src/main/snjit.cpp)
+target_link_libraries(snjit PRIVATE serenity_jit serenity_preprocessor)
+
 add_executable(serenity src/main/serenity.cpp)
 target_link_libraries(serenity PRIVATE serenity_aot serenity_preprocessor)
 target_compile_definitions(serenity PRIVATE
@@ -77,7 +118,7 @@ add_dependencies(serenity serenity_runtime)
 set(SERENITY_WARNING_TARGETS
     serenity_lexer serenity_preprocessor serenity_parser serenity_semantic
     serenity_bytecode serenity_interpreter serenity_runtime serenity_aot
-    sninterp serenity
+    serenity_jit sninterp snjit serenity
 )
 foreach(target IN LISTS SERENITY_WARNING_TARGETS)
     target_compile_options(${target}
@@ -110,8 +151,12 @@ target_link_libraries(serenity_interpreter_tests PRIVATE serenity_interpreter)
 add_executable(serenity_aot_tests tests/test_aot.cpp)
 target_link_libraries(serenity_aot_tests PRIVATE serenity_aot)
 
+add_executable(serenity_jit_tests tests/test_jit.cpp)
+target_link_libraries(serenity_jit_tests PRIVATE serenity_jit)
+
 foreach(target serenity_ast_tests serenity_parser_tests serenity_semantic_tests
-               serenity_bytecode_tests serenity_interpreter_tests serenity_aot_tests)
+               serenity_bytecode_tests serenity_interpreter_tests serenity_aot_tests
+               serenity_jit_tests)
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -127,6 +172,7 @@ add_test(NAME serenity_semantic_tests COMMAND serenity_semantic_tests)
 add_test(NAME serenity_bytecode_tests COMMAND serenity_bytecode_tests)
 add_test(NAME serenity_interpreter_tests COMMAND serenity_interpreter_tests)
 add_test(NAME serenity_aot_tests COMMAND serenity_aot_tests)
+add_test(NAME serenity_jit_tests COMMAND serenity_jit_tests)
 add_test(NAME serenity_aot_smoke
     COMMAND ${CMAKE_COMMAND}
         -DSERENITY=$<TARGET_FILE:serenity>

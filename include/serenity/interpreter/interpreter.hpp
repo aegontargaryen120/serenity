@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -69,11 +70,48 @@ struct ExecutionResult {
     RuntimeStats stats;
 };
 
+// Optional execution hooks let a tracing runtime observe bytecode execution
+// and replace a hot loop with compiled native code. The interpreter remains
+// fully usable without hooks and does not depend on LLVM.
+class InterpreterHooks {
+public:
+    virtual ~InterpreterHooks() = default;
+
+    // Called before an instruction. Return true when a compiled trace handled
+    // execution and updated nextInstructionPointer. The trace must preserve the
+    // operand stack prefix below stackBase and account for every executed
+    // bytecode instruction in instructionsExecuted.
+    [[nodiscard]] virtual bool tryExecuteTrace(
+        std::uint32_t functionIndex,
+        std::size_t instructionPointer,
+        const bytecode::Function& function,
+        std::vector<Value>& locals,
+        std::vector<Value>& globals,
+        std::vector<Value>& operandStack,
+        std::size_t stackBase,
+        std::size_t& nextInstructionPointer,
+        std::uint64_t instructionBudget,
+        std::uint64_t& instructionsExecuted) = 0;
+
+    // Called after a bytecode instruction completes. For JUMP_IF_FALSE,
+    // branchCondition contains the value consumed by that instruction. A
+    // nextInstructionPointer of size_t(-1) means the current frame returned or
+    // a call changed the active frame, so a trace recorder should stop.
+    virtual void onInstructionExecuted(
+        std::uint32_t functionIndex,
+        std::size_t instructionPointer,
+        const bytecode::Instruction& instruction,
+        std::optional<bool> branchCondition,
+        std::size_t nextInstructionPointer,
+        std::size_t relativeStackDepth) = 0;
+};
+
 struct InterpreterOptions {
     // A safety ceiling prevents an accidental infinite loop from hanging the
     // command-line interpreter indefinitely. Set to zero to disable it.
     std::uint64_t maxInstructions {100'000'000};
     std::size_t maxCallDepth {1024};
+    InterpreterHooks* hooks {nullptr};
 };
 
 class Interpreter {

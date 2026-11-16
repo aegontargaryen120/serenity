@@ -1,0 +1,12 @@
+func main() => int {
+    mut int cursor = 0;
+    mut int total = 0;
+
+    while (cursor < 100000) {
+        total += cursor;
+        cursor += 1;
+    }
+
+    println(total);
+    return 0;
+}
