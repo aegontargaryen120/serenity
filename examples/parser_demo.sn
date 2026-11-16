@@ -1,0 +1,41 @@
+struct {
+    string name = "Unknown";
+    int age;
+} Person;
+
+enum {
+    North,
+    South,
+    East,
+    West
+} Direction;
+
+func add(int, int) => int;
+
+add(left, right) => int {
+    return left + right;
+}
+
+func main() => int {
+    mut int age = 17;
+    bool isAdult;
+
+    Person aegon = {
+        .name = "Aegon",
+        .age = 120
+    };
+
+    if (age >= 18 && !isAdult) {
+        println("Adult");
+    } else {
+        println("Not an adult");
+    }
+
+    while (age < 20) {
+        age += 1;
+    }
+
+    aegon.age = age;
+    Direction direction = Direction.North;
+    return add(age, 3);
+}
