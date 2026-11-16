@@ -9,7 +9,7 @@ if(EXISTS "/opt/homebrew/opt/llvm/bin/clang" AND
     set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
 endif()
 
-project(serenity_frontend VERSION 0.6.0 LANGUAGES C CXX)
+project(serenity VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,7 +41,14 @@ add_library(serenity_bytecode
 target_include_directories(serenity_bytecode PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(serenity_bytecode PUBLIC serenity_semantic)
 
-foreach(target serenity_lexer serenity_preprocessor serenity_parser serenity_semantic serenity_bytecode)
+add_library(serenity_interpreter src/interpreter/interpreter.cpp)
+target_include_directories(serenity_interpreter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(serenity_interpreter PUBLIC serenity_bytecode)
+
+add_executable(sninterp src/main/sninterp.cpp)
+target_link_libraries(sninterp PRIVATE serenity_interpreter serenity_preprocessor)
+
+foreach(target serenity_lexer serenity_preprocessor serenity_parser serenity_semantic serenity_bytecode serenity_interpreter)
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -66,7 +73,10 @@ target_link_libraries(serenity_semantic_tests PRIVATE serenity_semantic)
 add_executable(serenity_bytecode_tests tests/test_bytecode.cpp)
 target_link_libraries(serenity_bytecode_tests PRIVATE serenity_bytecode)
 
-foreach(target serenity_ast_tests serenity_parser_tests serenity_semantic_tests serenity_bytecode_tests)
+add_executable(serenity_interpreter_tests tests/test_interpreter.cpp)
+target_link_libraries(serenity_interpreter_tests PRIVATE serenity_interpreter)
+
+foreach(target serenity_ast_tests serenity_parser_tests serenity_semantic_tests serenity_bytecode_tests serenity_interpreter_tests sninterp)
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -80,3 +90,4 @@ add_test(NAME serenity_ast_tests COMMAND serenity_ast_tests)
 add_test(NAME serenity_parser_tests COMMAND serenity_parser_tests)
 add_test(NAME serenity_semantic_tests COMMAND serenity_semantic_tests)
 add_test(NAME serenity_bytecode_tests COMMAND serenity_bytecode_tests)
+add_test(NAME serenity_interpreter_tests COMMAND serenity_interpreter_tests)

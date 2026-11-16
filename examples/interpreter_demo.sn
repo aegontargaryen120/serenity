@@ -1,0 +1,20 @@
+%include "include/interpreter_math.snh"
+
+add(left, right) => int {
+    return left + right;
+}
+
+func factorial(int n) => int {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+func main() => int {
+    mut int result = add(20, 22);
+    println("Serenity interpreter");
+    println(result);
+    println(factorial(5));
+    return 0;
+}
