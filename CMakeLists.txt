@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
 set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
 
-project(serenity_frontend VERSION 0.4.0 LANGUAGES C CXX)
+project(serenity_frontend VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,7 +30,13 @@ add_library(serenity_parser
 target_include_directories(serenity_parser PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(serenity_parser PUBLIC serenity_ast)
 
-foreach(target serenity_lexer serenity_preprocessor serenity_parser)
+add_library(serenity_semantic
+    src/semantic/analyzer.cpp
+)
+target_include_directories(serenity_semantic PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(serenity_semantic PUBLIC serenity_parser)
+
+foreach(target serenity_lexer serenity_preprocessor serenity_parser serenity_semantic)
     target_compile_options(${target}
         PRIVATE
             $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -57,8 +63,16 @@ target_compile_options(serenity_parser_tests
         $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
 )
 
+add_executable(serenity_semantic_tests tests/test_semantic.cpp)
+target_link_libraries(serenity_semantic_tests PRIVATE serenity_semantic)
+target_compile_options(serenity_semantic_tests
+    PRIVATE
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
+)
+
 enable_testing()
 add_test(NAME serenity_lexer_tests COMMAND serenity_lexer_tests)
 add_test(NAME serenity_preprocessor_tests COMMAND serenity_preprocessor_tests)
 add_test(NAME serenity_ast_tests COMMAND serenity_ast_tests)
 add_test(NAME serenity_parser_tests COMMAND serenity_parser_tests)
+add_test(NAME serenity_semantic_tests COMMAND serenity_semantic_tests)
