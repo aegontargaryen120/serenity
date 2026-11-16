@@ -26,6 +26,7 @@ namespace {
         {"string", TokenType::KwString},
         {"true", TokenType::KwTrue},
         {"false", TokenType::KwFalse},
+        {"null", TokenType::KwNull},
     };
     return table;
 }
@@ -58,6 +59,7 @@ std::string_view tokenTypeName(TokenType type) noexcept {
     case TokenType::KwString: return "string";
     case TokenType::KwTrue: return "true";
     case TokenType::KwFalse: return "false";
+    case TokenType::KwNull: return "null";
     case TokenType::Plus: return "+";
     case TokenType::Minus: return "-";
     case TokenType::Star: return "*";

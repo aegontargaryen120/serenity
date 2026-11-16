@@ -25,6 +25,7 @@ string surname = 'Targaryen';
 float pi = 3.14159;
 double precise = 2.0;
 bool alive = true;
+string empty = null;
 
 /* A block comment. */
 string first = "Hello, \
@@ -79,6 +80,7 @@ func add(int, int) => int;
     };
 
     require(contains(serenity::TokenType::KwMut), "mut keyword should be recognized");
+    require(contains(serenity::TokenType::KwNull), "null keyword should be recognized");
     require(contains(serenity::TokenType::KwFunc), "func keyword should be recognized");
     require(contains(serenity::TokenType::FloatingLiteral), "decimal floating literal should be recognized");
     require(contains(serenity::TokenType::Modulo), "%% should be the remainder operator");

@@ -36,6 +36,7 @@ enum class TokenType {
     KwString,
     KwTrue,
     KwFalse,
+    KwNull,
 
     // Arithmetic operators
     Plus,
