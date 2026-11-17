@@ -135,6 +135,7 @@ void Parser::synchronizeStatement() noexcept {
         case TokenType::KwReturn:
         case TokenType::KwIf:
         case TokenType::KwWhile:
+        case TokenType::KwFor:
         case TokenType::KwBreak:
         case TokenType::KwContinue:
         case TokenType::LeftBrace:
@@ -314,7 +315,7 @@ ast::DeclPtr Parser::parseEnumDeclaration() {
     return std::make_unique<ast::EnumDecl>(name.lexeme, std::move(members), span);
 }
 
-ast::VariableSpec Parser::parseVariableSpec(bool allowMutability) {
+ast::VariableSpec Parser::parseVariableSpec(bool allowMutability, bool consumeSemicolon) {
     const SourceLocation begin = peek().location;
     bool isMutable = false;
     if (allowMutability && match(TokenType::KwMut)) {
@@ -329,7 +330,9 @@ ast::VariableSpec Parser::parseVariableSpec(bool allowMutability) {
         initializer = parseInitializer();
     }
 
-    (void)consume(TokenType::Semicolon, "expected ';' after variable declaration");
+    if (consumeSemicolon) {
+        (void)consume(TokenType::Semicolon, "expected ';' after variable declaration");
+    }
     return ast::VariableSpec {
         .type = std::move(type),
         .name = name.lexeme,
@@ -414,6 +417,8 @@ ast::StmtPtr Parser::parseStatement() {
         return parseIfStatement();
     case TokenType::KwWhile:
         return parseWhileStatement();
+    case TokenType::KwFor:
+        return parseForStatement();
     case TokenType::KwBreak: {
         const SourceLocation begin = advance().location;
         (void)consume(TokenType::Semicolon, "expected ';' after 'break'");
@@ -424,9 +429,6 @@ ast::StmtPtr Parser::parseStatement() {
         (void)consume(TokenType::Semicolon, "expected ';' after 'continue'");
         return std::make_unique<ast::ContinueStmt>(spanFrom(begin));
     }
-    case TokenType::KwFor:
-        report("'for' is reserved but not supported in this Serenity version", peek().location);
-        throw ParseFailure {};
     default:
         return parseExpressionOrAssignmentStatement();
     }
@@ -452,15 +454,15 @@ std::unique_ptr<ast::BlockStmt> Parser::parseBlock() {
     return std::make_unique<ast::BlockStmt>(std::move(statements), spanFrom(begin));
 }
 
-ast::StmtPtr Parser::parseVariableDeclarationStatement() {
+ast::StmtPtr Parser::parseVariableDeclarationStatement(bool consumeSemicolon) {
     const SourceLocation begin = peek().location;
-    ast::VariableSpec variable = parseVariableSpec(true);
+    ast::VariableSpec variable = parseVariableSpec(true, consumeSemicolon);
     const ast::SourceSpan span = spanFrom(begin);
     variable.span = span;
     return std::make_unique<ast::VariableDeclStmt>(std::move(variable), span);
 }
 
-ast::StmtPtr Parser::parseExpressionOrAssignmentStatement() {
+ast::StmtPtr Parser::parseExpressionOrAssignmentStatement(bool consumeSemicolon) {
     const SourceLocation begin = peek().location;
     ast::ExprPtr expression = parseExpression();
 
@@ -473,7 +475,9 @@ ast::StmtPtr Parser::parseExpressionOrAssignmentStatement() {
         const TokenType operatorToken = advance().type;
         const ast::AssignmentOperator op = assignmentOperator(operatorToken);
         ast::ExprPtr value = parseInitializer();
-        (void)consume(TokenType::Semicolon, "expected ';' after assignment");
+        if (consumeSemicolon) {
+            (void)consume(TokenType::Semicolon, "expected ';' after assignment");
+        }
         return std::make_unique<ast::AssignmentStmt>(
             std::move(expression), op, std::move(value), spanFrom(begin));
     }
@@ -483,7 +487,9 @@ ast::StmtPtr Parser::parseExpressionOrAssignmentStatement() {
         throw ParseFailure {};
     }
 
-    (void)consume(TokenType::Semicolon, "expected ';' after function call");
+    if (consumeSemicolon) {
+        (void)consume(TokenType::Semicolon, "expected ';' after function call");
+    }
     return std::make_unique<ast::ExpressionStmt>(std::move(expression), spanFrom(begin));
 }
 
@@ -521,6 +527,41 @@ ast::StmtPtr Parser::parseWhileStatement() {
     (void)consume(TokenType::RightParen, "expected ')' after while condition");
     auto body = parseBlock();
     return std::make_unique<ast::WhileStmt>(std::move(condition), std::move(body), spanFrom(begin));
+}
+
+ast::StmtPtr Parser::parseForStatement() {
+    const SourceLocation begin = consume(TokenType::KwFor, "expected 'for'").location;
+    (void)consume(TokenType::LeftParen, "expected '(' after 'for'");
+
+    ast::StmtPtr initializer;
+    if (!check(TokenType::Semicolon)) {
+        if (check(TokenType::KwMut) || looksLikeLocalVariableDeclaration()) {
+            initializer = parseVariableDeclarationStatement(false);
+        } else {
+            initializer = parseExpressionOrAssignmentStatement(false);
+        }
+    }
+    (void)consume(TokenType::Semicolon, "expected ';' after for-loop initializer");
+
+    ast::ExprPtr condition;
+    if (!check(TokenType::Semicolon)) {
+        condition = parseExpression();
+    }
+    (void)consume(TokenType::Semicolon, "expected ';' after for-loop condition");
+
+    ast::StmtPtr increment;
+    if (!check(TokenType::RightParen)) {
+        increment = parseExpressionOrAssignmentStatement(false);
+    }
+    (void)consume(TokenType::RightParen, "expected ')' after for-loop clauses");
+
+    auto body = parseBlock();
+    return std::make_unique<ast::ForStmt>(
+        std::move(initializer),
+        std::move(condition),
+        std::move(increment),
+        std::move(body),
+        spanFrom(begin));
 }
 
 ast::ExprPtr Parser::parseInitializer() {

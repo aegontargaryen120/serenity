@@ -67,6 +67,7 @@ statement               = variable_declaration
                         | return_statement
                         | if_statement
                         | while_statement
+                        | for_statement
                         | break_statement
                         | continue_statement
                         | block ;
@@ -84,13 +85,25 @@ return_statement        = "return", expression, ";" ;
 if_statement            = "if", "(", expression, ")", block,
                           [ "else", ( block | if_statement ) ] ;
 while_statement         = "while", "(", expression, ")", block ;
+for_statement           = "for", "(", [ for_initializer ], ";",
+                          [ expression ], ";", [ for_increment ], ")", block ;
+for_initializer         = for_variable_declaration
+                        | assignment_clause
+                        | function_call ;
+for_variable_declaration
+                        = [ "mut" ], type, IDENTIFIER, [ "=", initializer ] ;
+for_increment           = assignment_clause | function_call ;
+assignment_clause       = assignment_target, assignment_operator, initializer ;
 break_statement        = "break", ";" ;
 continue_statement     = "continue", ";" ;
 ```
 
 Variables may omit initializers. The AST preserves that omission; semantic and
-runtime stages will apply the language-defined defaults. `return;` and `for`
-loops are not supported by this parser version.
+runtime stages will apply the language-defined defaults. `return;` remains
+unsupported. C-style `for` loops permit any of the three header clauses to be
+omitted, so `for (;;) { ... }` is a valid infinite loop. A variable declared in
+the initializer is scoped to the loop. `continue` proceeds to the increment
+clause before reevaluating the condition; `break` exits the loop.
 
 ## Initializers and types
 

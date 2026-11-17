@@ -384,6 +384,36 @@ private:
     std::unique_ptr<BlockStmt> body_;
 };
 
+class ForStmt final : public Statement {
+public:
+    ForStmt(
+        StmtPtr initializer,
+        ExprPtr condition,
+        StmtPtr increment,
+        std::unique_ptr<BlockStmt> body,
+        SourceSpan span = {})
+        : Statement(span),
+          initializer_(std::move(initializer)),
+          condition_(std::move(condition)),
+          increment_(std::move(increment)),
+          body_(std::move(body)) {}
+
+    [[nodiscard]] const Statement* initializer() const noexcept { return initializer_.get(); }
+    [[nodiscard]] Statement* initializer() noexcept { return initializer_.get(); }
+    [[nodiscard]] const Expression* condition() const noexcept { return condition_.get(); }
+    [[nodiscard]] Expression* condition() noexcept { return condition_.get(); }
+    [[nodiscard]] const Statement* increment() const noexcept { return increment_.get(); }
+    [[nodiscard]] Statement* increment() noexcept { return increment_.get(); }
+    [[nodiscard]] const BlockStmt& body() const noexcept { return *body_; }
+    [[nodiscard]] BlockStmt& body() noexcept { return *body_; }
+
+private:
+    StmtPtr initializer_;
+    ExprPtr condition_;
+    StmtPtr increment_;
+    std::unique_ptr<BlockStmt> body_;
+};
+
 class BreakStmt final : public Statement {
 public:
     using Statement::Statement;

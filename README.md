@@ -14,7 +14,8 @@ bytecode interpreter, an AOT compiler, and an initial tracing JIT.
 - **Preprocessor v0.2:** `%include` expansion, relative path resolution,
   include-once behavior, cycle handling, and source-origin mapping.
 - **AST v0.3:** syntax tree model with source spans.
-- **Parser v0.4:** recursive-descent parser and precedence-aware expressions.
+- **Parser:** recursive-descent parser, precedence-aware expressions, and C-style
+  `for (initializer; condition; increment)` loops with optional header clauses.
 - **Semantic analysis v0.5:** name/type resolution, signature checking,
   mutability and control-flow context checks.
 - **Bytecode generator v0.7:** fixed-width stack instructions, constants,

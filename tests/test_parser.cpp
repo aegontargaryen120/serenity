@@ -150,14 +150,44 @@ func main() => int {
     require(!topLevelStatement.ok(), "top-level executable statement should be rejected");
     require(!topLevelStatement.errors.empty(), "top-level statement error should be reported");
 
-    // `for` is reserved but intentionally not implemented in this version.
+    // C-style for loops support declaration/assignment initializers, optional
+    // conditions and increments, and retain their three clauses in the AST.
     ParseResult forLoop = parseSource(R"SERENITY(
 func main() => int {
-    for (;;) { }
+    for (mut int i = 0; i < 10; i += 1) {
+        if (i == 5) {
+            continue;
+        }
+    }
+    for (;;) {
+        break;
+    }
+    for (setup(); ; tick()) {
+        break;
+    }
     return 0;
 }
 )SERENITY");
-    require(!forLoop.ok(), "for loops should be rejected until their syntax is specified");
+    require(forLoop.ok(), "C-style for loops should parse");
+    const auto* forFunction = dynamic_cast<const FunctionDecl*>(forLoop.program->declarations()[0].get());
+    require(forFunction != nullptr, "for-loop test should contain a function");
+    const auto* forStatement = dynamic_cast<const ForStmt*>(forFunction->body()->statements()[0].get());
+    require(forStatement != nullptr, "for statement should produce a ForStmt node");
+    require(dynamic_cast<const VariableDeclStmt*>(forStatement->initializer()) != nullptr,
+            "for initializer should preserve a variable declaration");
+    require(forStatement->condition() != nullptr,
+            "for condition should be represented when present");
+    require(dynamic_cast<const AssignmentStmt*>(forStatement->increment()) != nullptr,
+            "for increment should preserve an assignment statement");
+    const auto* infiniteFor = dynamic_cast<const ForStmt*>(forFunction->body()->statements()[1].get());
+    require(infiniteFor != nullptr && infiniteFor->initializer() == nullptr &&
+                infiniteFor->condition() == nullptr && infiniteFor->increment() == nullptr,
+            "for (;;) should represent all three omitted clauses");
+    const auto* callClausesFor = dynamic_cast<const ForStmt*>(forFunction->body()->statements()[2].get());
+    require(callClausesFor != nullptr &&
+                dynamic_cast<const ExpressionStmt*>(callClausesFor->initializer()) != nullptr &&
+                dynamic_cast<const ExpressionStmt*>(callClausesFor->increment()) != nullptr,
+            "for initializer and increment should also accept function calls");
 
     // Missing semicolons should produce a useful syntax error.
     ParseResult missingSemicolon = parseSource(R"SERENITY(

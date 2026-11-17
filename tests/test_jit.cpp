@@ -116,11 +116,9 @@ int main() {
 
     const std::string loopSource = R"SERENITY(
 func main() => int {
-    mut int cursor = 0;
     mut int total = 0;
-    while (cursor < 1000) {
+    for (mut int cursor = 0; cursor < 1000; cursor += 1) {
         total += cursor;
-        cursor += 1;
     }
     println(total);
     return 0;
@@ -152,7 +150,7 @@ func main() => int {
     require(jitOutput.str() == interpreterOutput.str(),
             "JIT and interpreter must produce identical output");
     require(compiled.jit.compiledTraces >= 1,
-            "the hot integer loop should produce at least one compiled trace");
+            "the C-style for loop should produce at least one compiled trace");
     require(compiled.jit.traceExecutions >= 1,
             "compiled loop trace should execute");
     require(compiled.jit.nativeBytecodeInstructions > 100,

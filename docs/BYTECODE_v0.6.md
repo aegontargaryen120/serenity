@@ -71,6 +71,12 @@ values occupy its first local slots in declaration order.
 `JUMP_IF_FALSE` consumes its boolean condition. `&&` and `||` are emitted as
 conditional branches, not eager binary operations, so they short-circuit.
 
+C-style `for` loops do not require new opcodes. The generator emits the
+initializer once, tests the optional condition at the loop header, emits the
+body, sends `continue` jumps to the increment clause, executes the optional
+increment, and jumps back to the condition. An omitted condition has no exit
+branch, so `for (;;) { ... }` is an infinite loop unless it executes `break`.
+
 ## Functions and slots
 
 Each function owns its instruction vector and local-slot metadata. Function
@@ -141,7 +147,7 @@ original `.sn` or `.snh` file for runtime diagnostics and debugging.
 - No verifier for externally loaded/untrusted bytecode yet.
 - Function prototypes without definitions are rejected because v0.7 has no
   external linking contract.
-- `for`, arrays, and indexing are not part of the current parser/AST.
+- Arrays and indexing are not part of the current parser/AST.
 - A function without an explicit return on every path receives a generated
   type-default fallback return. Definite-return analysis is still future work.
 - Struct field defaults that are not compile-time constants are unsupported.

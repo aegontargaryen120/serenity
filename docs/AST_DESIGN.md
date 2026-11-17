@@ -19,12 +19,14 @@ There is no top-level statement node in `Program`.
 ## Statements
 
 Function bodies contain `BlockStmt` nodes. Blocks can contain variable
-declarations, assignments, expression statements (the parser will initially
-restrict these to function calls), returns, conditionals, loops, `break`,
-`continue`, and nested blocks.
+declarations, assignments, expression statements (the parser restricts these
+to function calls), returns, conditionals, `while` and C-style `for` loops,
+`break`, `continue`, and nested blocks.
 
-`for` remains a reserved keyword. No `ForStmt` exists until its syntax is
-specified.
+`ForStmt` stores an optional initializer statement, optional condition
+expression, optional increment statement, and a required body block. The
+initializer declaration's scope spans the condition, body, and increment, but
+ends after the loop.
 
 ## Expressions
 

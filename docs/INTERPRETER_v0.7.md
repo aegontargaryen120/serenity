@@ -156,6 +156,6 @@ interpreter.
   `std::shared_ptr`; reference cycles can therefore retain objects until a later
   garbage-collector milestone replaces this interim ownership strategy.
 - Struct equality currently compares object identity, not field-by-field value.
-- No arrays, indexing, `for` loops, closures, external functions, or native FFI.
+- No arrays, indexing, closures, external functions, or native FFI.
 - `print()` and `println()` accept one printable primitive argument, as defined by
   the current semantic analyzer.

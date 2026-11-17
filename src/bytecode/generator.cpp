@@ -98,7 +98,8 @@ private:
     };
 
     struct LoopContext {
-        std::size_t continueTarget {0};
+        std::optional<std::size_t> continueTarget;
+        std::vector<std::size_t> continueJumps;
         std::vector<std::size_t> breakJumps;
     };
 
@@ -141,6 +142,7 @@ private:
     void compileReturn(const ast::ReturnStmt& statement);
     void compileIf(const ast::IfStmt& statement);
     void compileWhile(const ast::WhileStmt& statement);
+    void compileFor(const ast::ForStmt& statement);
     void compileExpression(const ast::Expression& expression);
     void compileCall(const ast::CallExpr& expression);
     void compileMemberAccess(const ast::MemberAccessExpr& expression);
@@ -875,6 +877,8 @@ void FunctionCompiler::compileStatement(const ast::Statement& statement) {
         compileIf(*conditional);
     } else if (const auto* loop = dynamic_cast<const ast::WhileStmt*>(&statement)) {
         compileWhile(*loop);
+    } else if (const auto* forLoop = dynamic_cast<const ast::ForStmt*>(&statement)) {
+        compileFor(*forLoop);
     } else if (dynamic_cast<const ast::BreakStmt*>(&statement) != nullptr) {
         if (loops_.empty()) {
             report("'break' has no enclosing loop during bytecode generation", statement.span());
@@ -886,7 +890,11 @@ void FunctionCompiler::compileStatement(const ast::Statement& statement) {
             report("'continue' has no enclosing loop during bytecode generation", statement.span());
         } else {
             const std::size_t jump = emit(Opcode::Jump, statement.span());
-            patchJump(jump, loops_.back().continueTarget, statement.span());
+            if (loops_.back().continueTarget.has_value()) {
+                patchJump(jump, *loops_.back().continueTarget, statement.span());
+            } else {
+                loops_.back().continueJumps.push_back(jump);
+            }
         }
     } else {
         report("unsupported statement in bytecode generator", statement.span());
@@ -990,8 +998,11 @@ void FunctionCompiler::compileWhile(const ast::WhileStmt& statement) {
     compileExpression(statement.condition());
     const std::size_t exitJump = emit(Opcode::JumpIfFalse, statement.condition().span());
 
-    loops_.push_back(LoopContext{loopStart, {}});
+    loops_.push_back(LoopContext{loopStart, {}, {}});
     compileBlock(statement.body(), true);
+    for (const std::size_t continueJump : loops_.back().continueJumps) {
+        patchJump(continueJump, loopStart, statement.span());
+    }
     const std::size_t backJump = emit(Opcode::Jump, statement.span());
     patchJump(backJump, loopStart, statement.span());
 
@@ -1001,6 +1012,50 @@ void FunctionCompiler::compileWhile(const ast::WhileStmt& statement) {
         patchJump(breakJump, loopEnd, statement.span());
     }
     loops_.pop_back();
+}
+
+void FunctionCompiler::compileFor(const ast::ForStmt& statement) {
+    // A C-style for loop owns a scope spanning all three header clauses and
+    // the body. The body's block receives its own nested scope.
+    scopes_.emplace_back();
+    if (statement.initializer() != nullptr) {
+        compileStatement(*statement.initializer());
+    }
+
+    const std::size_t conditionStart = function_.code.size();
+    std::optional<std::size_t> exitJump;
+    if (statement.condition() != nullptr) {
+        compileExpression(*statement.condition());
+        exitJump = emit(Opcode::JumpIfFalse, statement.condition()->span());
+    }
+
+    // A continue in the body must jump to the increment clause, whose address
+    // is not known until the body has been emitted.
+    loops_.push_back(LoopContext{std::nullopt, {}, {}});
+    compileBlock(statement.body(), true);
+
+    const std::size_t incrementStart = function_.code.size();
+    loops_.back().continueTarget = incrementStart;
+    for (const std::size_t continueJump : loops_.back().continueJumps) {
+        patchJump(continueJump, incrementStart, statement.span());
+    }
+
+    if (statement.increment() != nullptr) {
+        compileStatement(*statement.increment());
+    }
+
+    const std::size_t backJump = emit(Opcode::Jump, statement.span());
+    patchJump(backJump, conditionStart, statement.span());
+
+    const std::size_t loopEnd = function_.code.size();
+    if (exitJump.has_value()) {
+        patchJump(*exitJump, loopEnd, statement.span());
+    }
+    for (const std::size_t breakJump : loops_.back().breakJumps) {
+        patchJump(breakJump, loopEnd, statement.span());
+    }
+    loops_.pop_back();
+    scopes_.pop_back();
 }
 
 void FunctionCompiler::compileExpression(const ast::Expression& expression) {

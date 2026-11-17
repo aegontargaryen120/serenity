@@ -399,6 +399,8 @@ void SemanticAnalyzer::analyzeStatement(const ast::Statement& statement) {
         analyzeIf(*ifStatement);
     } else if (const auto* whileStatement = dynamic_cast<const ast::WhileStmt*>(&statement)) {
         analyzeWhile(*whileStatement);
+    } else if (const auto* forStatement = dynamic_cast<const ast::ForStmt*>(&statement)) {
+        analyzeFor(*forStatement);
     } else if (dynamic_cast<const ast::BreakStmt*>(&statement) != nullptr) {
         if (loopDepth_ == 0) report("'break' is only valid inside a loop", statement.span());
     } else if (dynamic_cast<const ast::ContinueStmt*>(&statement) != nullptr) {
@@ -509,6 +511,32 @@ void SemanticAnalyzer::analyzeWhile(const ast::WhileStmt& statement) {
     ++loopDepth_;
     analyzeBlock(statement.body(), true);
     --loopDepth_;
+}
+
+void SemanticAnalyzer::analyzeFor(const ast::ForStmt& statement) {
+    // The initializer's declaration belongs to the loop scope and remains
+    // visible to the condition, body, and increment, but not after the loop.
+    pushScope();
+    if (statement.initializer() != nullptr) {
+        analyzeStatement(*statement.initializer());
+    }
+
+    if (statement.condition() != nullptr) {
+        const Type boolType{TypeKind::Bool, {}};
+        const Type conditionType = analyzeExpression(*statement.condition(), &boolType);
+        if (!conditionType.isError() && conditionType.kind != TypeKind::Bool) {
+            report("for condition must have type 'bool', not '" + conditionType.toString() + "'",
+                   statement.condition()->span());
+        }
+    }
+
+    ++loopDepth_;
+    analyzeBlock(statement.body(), true);
+    if (statement.increment() != nullptr) {
+        analyzeStatement(*statement.increment());
+    }
+    --loopDepth_;
+    popScope();
 }
 
 Type SemanticAnalyzer::analyzeExpression(

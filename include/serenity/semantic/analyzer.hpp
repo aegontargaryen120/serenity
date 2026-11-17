@@ -132,6 +132,7 @@ private:
     void analyzeReturn(const ast::ReturnStmt& statement);
     void analyzeIf(const ast::IfStmt& statement);
     void analyzeWhile(const ast::WhileStmt& statement);
+    void analyzeFor(const ast::ForStmt& statement);
     void analyzeFunction(const ast::FunctionDecl& function);
 
     [[nodiscard]] Type analyzeExpression(

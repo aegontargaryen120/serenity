@@ -205,6 +205,33 @@ func main() => int {
     require(shortMain != shortCircuit.module->functions.end(), "short-circuit main should exist");
     require(hasOpcode(*shortMain, Opcode::JumpIfFalse), "logical AND should use conditional branching");
 
+    const std::string forLoopSource = R"SERENITY(
+func main() => int {
+    mut int total = 0;
+    for (mut int i = 0; i < 8; i += 1) {
+        if (i == 3) {
+            continue;
+        }
+        if (i == 6) {
+            break;
+        }
+        total += i;
+    }
+    return total;
+}
+)SERENITY";
+    CheckedProgram forLoopChecked = parseAndCheck(forLoopSource);
+    BytecodeGenerator forLoopGenerator(*forLoopChecked.program, forLoopChecked.semanticModel);
+    auto forLoop = forLoopGenerator.generate();
+    require(forLoop.ok(), "valid for loop should generate bytecode");
+    const auto forMain = std::find_if(forLoop.module->functions.begin(), forLoop.module->functions.end(),
+        [](const Function& function) { return function.name == "main"; });
+    require(forMain != forLoop.module->functions.end(), "for-loop main should exist");
+    require(hasOpcode(*forMain, Opcode::JumpIfFalse),
+            "for-loop condition should use the existing conditional jump instruction");
+    require(hasOpcode(*forMain, Opcode::Jump),
+            "for-loop backedge, break, and continue should use existing jump instructions");
+
     // Missing function implementations cannot be represented in a standalone
     // bytecode module yet; report this at generation rather than producing a
     // dangling function index for the interpreter.

@@ -55,12 +55,17 @@ function body.
 - `return expression;`.
 - `if` / `else if` / `else` with parenthesized conditions and braced bodies.
 - `while` with a parenthesized condition and braced body.
+- C-style `for (initializer; condition; increment)` loops. Each header clause
+  may be omitted; `for (;;) { ... }` is an infinite loop.
 - `break;` and `continue;`.
 - Nested blocks.
 
-`for` is tokenized as a reserved keyword but is not parsed in v0.4 because its
-syntax has not yet been specified. `return;` is not supported; a return
-expression is required by the current grammar.
+A `for` initializer may be a variable declaration, assignment, or function
+call. The increment may be an assignment or function call. The initializer's
+variable scope includes the condition, body, and increment, and ends at the
+closing brace. `continue` jumps to the increment clause; `break` exits the
+loop. `return;` is not supported; a return expression is required by the
+current grammar.
 
 ## Functions
 
@@ -113,4 +118,4 @@ resolution and mutability checks belong to semantic analysis.
 The parser does not perform name lookup, type checking, default-value
 materialization, function signature matching, duplicate declaration checks,
 control-flow validation, or overload resolution. It also does not yet parse
-arrays, indexing, `for` loops, a `void` type, or a module system.
+arrays, indexing, a `void` type, or a module system.

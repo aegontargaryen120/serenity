@@ -61,7 +61,9 @@ private:
     [[nodiscard]] ast::DeclPtr parseStructDeclaration();
     [[nodiscard]] ast::DeclPtr parseEnumDeclaration();
 
-    [[nodiscard]] ast::VariableSpec parseVariableSpec(bool allowMutability);
+    [[nodiscard]] ast::VariableSpec parseVariableSpec(
+        bool allowMutability,
+        bool consumeSemicolon = true);
     [[nodiscard]] ast::TypeRef parseType();
     [[nodiscard]] ast::Parameter parseParameter(bool allowMissingName);
     [[nodiscard]] std::vector<ast::Parameter> parseFunctionParameters(
@@ -70,11 +72,12 @@ private:
 
     [[nodiscard]] ast::StmtPtr parseStatement();
     [[nodiscard]] std::unique_ptr<ast::BlockStmt> parseBlock();
-    [[nodiscard]] ast::StmtPtr parseVariableDeclarationStatement();
-    [[nodiscard]] ast::StmtPtr parseExpressionOrAssignmentStatement();
+    [[nodiscard]] ast::StmtPtr parseVariableDeclarationStatement(bool consumeSemicolon = true);
+    [[nodiscard]] ast::StmtPtr parseExpressionOrAssignmentStatement(bool consumeSemicolon = true);
     [[nodiscard]] ast::StmtPtr parseReturnStatement();
     [[nodiscard]] ast::StmtPtr parseIfStatement();
     [[nodiscard]] ast::StmtPtr parseWhileStatement();
+    [[nodiscard]] ast::StmtPtr parseForStatement();
 
     [[nodiscard]] ast::ExprPtr parseInitializer();
     [[nodiscard]] ast::ExprPtr parseStructInitializer();

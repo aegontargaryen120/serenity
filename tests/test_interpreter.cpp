@@ -213,6 +213,64 @@ func main() => int {
     require(loopExecution.error->message.find("maximum instruction count") != std::string::npos,
             "instruction-limit diagnostic should explain why execution stopped");
 
+    const std::string forLoopSource = R"SERENITY(
+mut int globalTicks = 0;
+
+func tick() => void {
+    globalTicks += 1;
+}
+
+func main() => int {
+    mut int sum = 0;
+    for (mut int i = 0; i < 10; i += 1) {
+        if (i == 2) {
+            continue;
+        }
+        if (i == 7) {
+            break;
+        }
+        sum += i;
+    }
+
+    mut int index = 0;
+    mut int count = 0;
+    for (; index < 3; index += 1) {
+        count += 1;
+    }
+    for (;;) {
+        count += 1;
+        break;
+    }
+    for (count = count; count < 6; count += 1) {
+    }
+    for (tick(); globalTicks < 3; tick()) {
+    }
+
+    mut int nestedCount = 0;
+    for (mut int outer = 0; outer < 2; outer += 1) {
+        for (mut int inner = 0; inner < 3; inner += 1) {
+            if (inner == 1) {
+                continue;
+            }
+            nestedCount += 1;
+        }
+    }
+
+    println(sum);
+    println(count);
+    println(globalTicks);
+    println(nestedCount);
+    return 0;
+}
+)SERENITY";
+    CompiledProgram forLoop = compile(forLoopSource);
+    std::ostringstream forOutput;
+    Interpreter forInterpreter(forLoop.module, forOutput);
+    const auto forExecution = forInterpreter.run();
+    require(forExecution.ok, "C-style for loops should execute successfully");
+    require(forOutput.str() == "19\n6\n3\n4\n",
+            "for declaration/assignment/call clauses, continue, break, nesting, and omitted clauses should work");
+
     std::cout << "All Serenity interpreter tests passed.\n";
     return EXIT_SUCCESS;
 }

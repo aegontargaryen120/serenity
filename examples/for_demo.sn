@@ -1,0 +1,16 @@
+func main() => int {
+    mut int sum = 0;
+
+    for (mut int index = 0; index < 10; index += 1) {
+        if (index == 2) {
+            continue;
+        }
+        if (index == 7) {
+            break;
+        }
+        sum += index;
+    }
+
+    println(sum);
+    return 0;
+}

@@ -93,6 +93,14 @@ func main() => int {
         }
     }
 
+    mut int total = 0;
+    for (mut int index = 0; index < 5; index += 1) {
+        if (index == 2) {
+            continue;
+        }
+        total += index;
+    }
+
     person.age = age;
     println(add(age, 3));
     println(ratio + 0.5);
@@ -136,6 +144,9 @@ func main() => int {
     }
     identity("wrong argument type");
     identity();
+    for (mut int index = 0; index; index += 1) {
+        continue;
+    }
     break;
     return "wrong return type";
 }
@@ -156,6 +167,8 @@ func main() => int {
     require(containsMessage(invalid, "if condition must have type 'bool'"), "non-bool condition should be diagnosed");
     require(containsMessage(invalid, "argument 1 of 'identity'"), "function argument type mismatch should be diagnosed");
     require(containsMessage(invalid, "expects 1 argument(s), but received 0"), "function argument count mismatch should be diagnosed");
+    require(containsMessage(invalid, "for condition must have type 'bool'"),
+            "non-bool for condition should be diagnosed");
     require(containsMessage(invalid, "'break' is only valid inside a loop"), "break outside loop should be diagnosed");
     require(containsMessage(invalid, "return value has type 'string'"), "return type mismatch should be diagnosed");
 
@@ -186,6 +199,20 @@ func main() => int {
     semantic::SemanticAnalyzer mutableStructAnalyzer(mutableStructProgram);
     semantic::SemanticResult mutableStruct = mutableStructAnalyzer.analyze();
     require(mutableStruct.ok(), "fields of a mutable struct binding should be mutable");
+
+    const std::string forScopeSource = R"SERENITY(
+func main() => int {
+    for (mut int index = 0; index < 2; index += 1) {
+    }
+    return index;
+}
+)SERENITY";
+    ast::Program forScopeProgram = parseProgram(forScopeSource);
+    semantic::SemanticAnalyzer forScopeAnalyzer(forScopeProgram);
+    semantic::SemanticResult forScope = forScopeAnalyzer.analyze();
+    require(!forScope.ok(), "for initializer variables must not escape the loop scope");
+    require(containsMessage(forScope, "unknown variable 'index'"),
+            "using a for initializer variable after the loop should be diagnosed");
 
     const std::string functionErrorsSource = R"SERENITY(
 func add(int, int) => int;
