@@ -34,7 +34,51 @@ bytecode interpreter, an AOT compiler, and an initial tracing JIT.
 
 Bytecode serialization (`.sbc`) is not implemented yet.
 
-## Build and test
+## Build with Zap (primary build system)
+
+Serenity is built with the companion [Zap](https://github.com/aegontargaryen120/zap.h)
+build tool. The build configuration lives in `zap.c`; it does not invoke CMake.
+The Zap repository should be checked out beside Serenity:
+
+```text
+code/
+├── serenity/
+│   └── zap.c
+└── zap.h/
+    └── zap.h
+```
+
+Bootstrap the build tool once from the Serenity repository root:
+
+```sh
+/opt/homebrew/opt/llvm/bin/clang -std=c11 -O2 -Wall -Wextra -Wpedantic zap.c -o zap
+```
+
+Then use Zap directly:
+
+```sh
+./zap build                 # Build serenity, sninterp, and snjit
+./zap test                  # Build and run tests and backend smoke tests
+./zap build --release -j 8  # Optimized build with eight compile jobs
+./zap interpreter           # Build sninterp without linking LLVM
+./zap interpreter --no-llvm # Explicit interpreter-only build
+./zap compiler              # Build the AOT compiler
+./zap jit                   # Build snjit
+./zap clean                 # Remove generated build artifacts
+./zap --help                # List commands and options
+```
+
+Executables are written to `build/bin/`. Zap uses `llvm-config` to discover
+LLVM headers and link flags. Set `LLVM_CONFIG` to override its location; `CC`,
+`CXX`, and `AR` can override the default Homebrew Clang/LLVM tools. `--verbose`
+prints full commands. Compilation is incremental using compiler-generated
+dependency files, and independent source files are compiled in parallel.
+
+The interpreter target does not link LLVM. The AOT compiler and tracing JIT
+require LLVM development libraries. `./zap test --no-llvm` runs the
+LLVM-independent tests when LLVM is unavailable.
+
+## Legacy CMake build (temporary fallback)
 
 On Apple Silicon with Homebrew LLVM installed:
 

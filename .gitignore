@@ -1,3 +1,8 @@
 /build/
 /cmake-build-*/
 .DS_Store
+/zap
+*.zap-tmp-*
+zap
+bin
+build
